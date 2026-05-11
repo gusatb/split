@@ -3,7 +3,18 @@ import { useGameState } from './useGameState'
 import './App.css'
 
 function App() {
-  const { board, lines } = useGameState()
+  const {
+    actions,
+    areas,
+    board,
+    currentPlayer,
+    lines,
+    pendingAreaChoice,
+    playerScores,
+    turnCount,
+    winner,
+  } = useGameState()
+  const canApplyPieRule = turnCount === 1 && !winner && !pendingAreaChoice
 
   return (
     <main className="app-shell">
@@ -17,7 +28,49 @@ function App() {
           </p>
         </div>
 
-        <GameCanvas board={board} lines={lines} />
+        <div className="game-status" aria-live="polite">
+          <div>
+            <span className="label">Turn</span>
+            <strong>{winner ? `${winner} wins` : currentPlayer}</strong>
+          </div>
+          <div>
+            <span className="label">Player 1</span>
+            <strong>{playerScores.player1.toFixed(1)}</strong>
+          </div>
+          <div>
+            <span className="label">Player 2</span>
+            <strong>{playerScores.player2.toFixed(1)}</strong>
+          </div>
+        </div>
+
+        {pendingAreaChoice ? (
+          <p className="prompt">
+            {pendingAreaChoice.choosingPlayer} must choose which highlighted sub-area scores for{' '}
+            {pendingAreaChoice.scoringPlayer}.
+          </p>
+        ) : (
+          <p className="prompt">
+            Click a line edge to start a split, then click another edge to finish it. Click inside a
+            neutral area of size 5 or less to fill it.
+          </p>
+        )}
+
+        {canApplyPieRule ? (
+          <button type="button" className="pie-rule-button" onClick={actions.applyPieRule}>
+            Apply pie rule: swap colors
+          </button>
+        ) : null}
+
+        <GameCanvas
+          board={board}
+          lines={lines}
+          areas={areas}
+          currentPlayer={currentPlayer}
+          pendingAreaChoice={pendingAreaChoice}
+          onDrawLine={actions.drawLine}
+          onFillArea={actions.fillAreaAt}
+          onChoosePendingArea={actions.choosePendingArea}
+        />
       </section>
     </main>
   )
