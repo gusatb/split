@@ -1,4 +1,4 @@
-# Split Design
+# Split
 
 A Vite + React + TypeScript single page implementation of the Split Design game.
 
