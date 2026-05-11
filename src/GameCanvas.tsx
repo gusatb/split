@@ -1,6 +1,7 @@
 import { useEffect, useMemo, useRef, useState } from 'react'
 import type { PointerEvent } from 'react'
 import {
+  GEOMETRY_EPSILON,
   doLinesIntersect,
   getDistance,
   isPointOnLineSegment,
@@ -11,7 +12,10 @@ import {
   isLegalLineSegment,
 } from './lineSegments'
 import {
+  FILL_CAPTURE_LIMIT,
   getAreaPolygonPoints,
+  getSplitMoveResult,
+  isSplitMoveAllowed,
   isPointInsidePolygon,
   type BoardConfig,
   type PendingAreaChoice,
@@ -98,7 +102,27 @@ const canLineIntersectionBeIgnored = (line: Line, previewLine: Line) => {
   )
 }
 
-const isPreviewValid = (start: SnappedPoint, end: SnappedPoint, lines: Line[]) => {
+const doLinesOverlap = (lineA: Line, lineB: Line) => {
+  const overlappingPoints = [
+    { x: lineA.x1, y: lineA.y1 },
+    { x: lineA.x2, y: lineA.y2 },
+    { x: lineB.x1, y: lineB.y1 },
+    { x: lineB.x2, y: lineB.y2 },
+  ].filter((point) => isPointOnLineSegment(point, lineA) && isPointOnLineSegment(point, lineB))
+
+  return overlappingPoints.some((point, index) =>
+    overlappingPoints
+      .slice(index + 1)
+      .some((otherPoint) => getDistance(point, otherPoint) > GEOMETRY_EPSILON),
+  )
+}
+
+const isPreviewValid = (
+  start: SnappedPoint,
+  end: SnappedPoint,
+  lines: Line[],
+  areas: Area[],
+) => {
   if (start.lineId === end.lineId) {
     return false
   }
@@ -108,14 +132,25 @@ const isPreviewValid = (start: SnappedPoint, end: SnappedPoint, lines: Line[]) =
   }
 
   const previewLine = createPreviewLine(start, end)
-
-  return !lines.some((line) => {
+  const hasInvalidIntersection = lines.some((line) => {
     if (line.id === start.lineId || line.id === end.lineId) {
-      return false
+      return doLinesOverlap(line, previewLine)
+    }
+
+    if (doLinesOverlap(line, previewLine)) {
+      return true
     }
 
     return doLinesIntersect(line, previewLine) && !canLineIntersectionBeIgnored(line, previewLine)
   })
+
+  if (hasInvalidIntersection) {
+    return false
+  }
+
+  const splitMoveResult = getSplitMoveResult(areas, lines, previewLine)
+
+  return splitMoveResult !== null && isSplitMoveAllowed(splitMoveResult)
 }
 
 const getPolygonCentroid = (points: Point[]) => {
@@ -170,9 +205,9 @@ export function GameCanvas({
 
     return {
       line: createPreviewLine(selectedSnapPoint, hoveredSnapPoint),
-      isValid: isPreviewValid(selectedSnapPoint, hoveredSnapPoint, lines),
+      isValid: isPreviewValid(selectedSnapPoint, hoveredSnapPoint, lines, areas),
     }
-  }, [hoveredSnapPoint, lines, selectedSnapPoint])
+  }, [areas, hoveredSnapPoint, lines, selectedSnapPoint])
 
   useEffect(() => {
     const handleResize = () => {
@@ -207,34 +242,53 @@ export function GameCanvas({
     context.fillRect(0, 0, renderBoard.canvasSize, renderBoard.canvasSize)
 
     areas.forEach((area) => {
-      const polygonPoints = getAreaPolygonPoints(area, lines).map((point) =>
-        toCanvasPoint(point, renderBoard),
-      )
+      const areaPolygon = getAreaPolygonPoints(area, lines)
+      const polygonPoints = areaPolygon.map((point) => toCanvasPoint(point, renderBoard))
 
       if (polygonPoints.length < 3) {
         return
       }
 
+      const isPendingChoice = pendingAreaChoice?.areaIds.includes(area.id) ?? false
+      const isFreeTakeArea =
+        area.color === 'neutral' && area.geometricArea <= FILL_CAPTURE_LIMIT
+
       context.beginPath()
       context.moveTo(polygonPoints[0].x, polygonPoints[0].y)
       polygonPoints.slice(1).forEach((point) => context.lineTo(point.x, point.y))
       context.closePath()
-      context.fillStyle = pendingAreaChoice?.areaIds.includes(area.id)
+      context.fillStyle = isPendingChoice
         ? 'rgba(250, 204, 21, 0.22)'
         : areaColors[area.color]
       context.fill()
 
-      if (pendingAreaChoice?.areaIds.includes(area.id)) {
-        const labelPoint = toCanvasPoint(
-          getPolygonCentroid(getAreaPolygonPoints(area, lines)),
-          renderBoard,
-        )
+      if (isFreeTakeArea) {
+        context.fillStyle = 'rgba(34, 197, 94, 0.18)'
+        context.strokeStyle = '#16a34a'
+        context.lineWidth = 2
+        context.fill()
+        context.stroke()
+      }
 
-        context.fillStyle = '#713f12'
-        context.font = '700 18px system-ui, sans-serif'
+      if (inspectionMode || isPendingChoice) {
+        const labelPoint = toCanvasPoint(getPolygonCentroid(areaPolygon), renderBoard)
+        const labelLines = [
+          area.geometricArea.toFixed(1),
+          ...(inspectionMode && isFreeTakeArea ? ['free'] : []),
+        ]
+
+        context.fillStyle = isFreeTakeArea ? '#166534' : '#713f12'
         context.textAlign = 'center'
         context.textBaseline = 'middle'
-        context.fillText(area.geometricArea.toFixed(1), labelPoint.x, labelPoint.y)
+        labelLines.forEach((label, index) => {
+          context.font =
+            index === 0 ? '700 18px system-ui, sans-serif' : '700 12px system-ui, sans-serif'
+          context.fillText(
+            label,
+            labelPoint.x,
+            labelPoint.y + (index - (labelLines.length - 1) / 2) * 16,
+          )
+        })
       }
     })
 
@@ -391,12 +445,16 @@ export function GameCanvas({
     )
   }
 
-  const findClosestSnapPoint = (point: Point, excludedLineId?: string): SnappedPoint | null => {
+  const findClosestSnapPoint = (
+    point: Point,
+    excludedLineId?: string,
+    moveStart?: SnappedPoint | null,
+  ): SnappedPoint | null => {
     if (!isPointInsideGameScreen(point)) {
       return null
     }
 
-    const closestSnap = legalLineSegments
+    const snapCandidates = legalLineSegments
       .filter(
         (segment) =>
           segment.lineId !== excludedLineId && isLegalLineSegment(segment),
@@ -410,7 +468,12 @@ export function GameCanvas({
           distance: getDistance(point, snapPoint),
         }
       })
-      .sort((firstPoint, secondPoint) => firstPoint.distance - secondPoint.distance)[0]
+      .filter(
+        (candidate) =>
+          !moveStart || isPreviewValid(moveStart, candidate, lines, areas),
+      )
+      .sort((firstPoint, secondPoint) => firstPoint.distance - secondPoint.distance)
+    const closestSnap = snapCandidates[0]
 
     if (!closestSnap) {
       return null
@@ -444,7 +507,11 @@ export function GameCanvas({
       return
     }
 
-    const closestSnapPoint = findClosestSnapPoint(boardPoint, selectedSnapPoint?.lineId)
+    const closestSnapPoint = findClosestSnapPoint(
+      boardPoint,
+      selectedSnapPoint?.lineId,
+      selectedSnapPoint,
+    )
 
     setHoveredSnapPoint(closestSnapPoint)
   }
@@ -466,7 +533,11 @@ export function GameCanvas({
       return
     }
 
-    const closestSnapPoint = findClosestSnapPoint(boardPoint, selectedSnapPoint?.lineId)
+    const closestSnapPoint = findClosestSnapPoint(
+      boardPoint,
+      selectedSnapPoint?.lineId,
+      selectedSnapPoint,
+    )
     setHoveredSnapPoint(closestSnapPoint)
   }
 
@@ -514,7 +585,11 @@ export function GameCanvas({
       return
     }
 
-    const closestSnapPoint = findClosestSnapPoint(boardPoint, selectedSnapPoint?.lineId)
+    const closestSnapPoint = findClosestSnapPoint(
+      boardPoint,
+      selectedSnapPoint?.lineId,
+      selectedSnapPoint,
+    )
     setHoveredSnapPoint(closestSnapPoint)
 
     if (!closestSnapPoint) {
@@ -532,7 +607,7 @@ export function GameCanvas({
       return
     }
 
-    if (isPreviewValid(selectedSnapPoint, closestSnapPoint, lines)) {
+    if (isPreviewValid(selectedSnapPoint, closestSnapPoint, lines, areas)) {
       onDrawLine(selectedSnapPoint, closestSnapPoint)
       setSelectedSnapPoint(null)
       setHoveredSnapPoint(null)
