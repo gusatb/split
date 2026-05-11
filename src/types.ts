@@ -1,7 +1,13 @@
 export type LineColor = 'neutral' | 'player1' | 'player2'
+export type AreaColor = 'neutral' | 'player1' | 'player2'
 export type PlayerColor = 'player1' | 'player2'
 export type LineChoice = 0 | 1 | 2
 export type Endpoint = 1 | 2
+
+export interface Point {
+  x: number
+  y: number
+}
 
 export interface Line {
   id: string
@@ -11,6 +17,10 @@ export interface Line {
   y2: number
   color: LineColor
   choice: LineChoice
+  filledSides?: {
+    left: boolean
+    right: boolean
+  }
 }
 
 export interface PointReference {
@@ -20,7 +30,7 @@ export interface PointReference {
 
 export interface Area {
   id: string
-  color: PlayerColor
+  color: AreaColor
   points: PointReference[]
   geometricArea: number
 }
