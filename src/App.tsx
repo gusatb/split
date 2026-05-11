@@ -1,5 +1,6 @@
-import { useState } from 'react'
+import { useEffect, useState } from 'react'
 import { GameCanvas } from './GameCanvas'
+import { themes, type ThemeId } from './themes'
 import { getAreaPolygonPoints, useGameState } from './useGameState'
 import type { AreaInspectionSnapshot } from './types'
 import './App.css'
@@ -19,6 +20,8 @@ function App() {
   const [isInspectingAreas, setIsInspectingAreas] = useState(false)
   const [inspectionAreas, setInspectionAreas] = useState<AreaInspectionSnapshot[]>([])
   const [inspectedArea, setInspectedArea] = useState<AreaInspectionSnapshot | null>(null)
+  const [themeId, setThemeId] = useState<ThemeId>('synth')
+  const activeTheme = themes[themeId]
   const canApplyPieRule = turnCount === 1 && !winner && !pendingAreaChoice
   const turnLabel = winner
     ? `${winner} wins`
@@ -70,6 +73,10 @@ function App() {
     actions.resetGame()
   }
 
+  useEffect(() => {
+    document.documentElement.dataset.theme = themeId
+  }, [themeId])
+
   return (
     <main className="app-shell">
       {winner ? <div className="victory-banner">{winner} wins!</div> : null}
@@ -97,6 +104,16 @@ function App() {
             <span className="label">Player 2</span>
             <strong>{playerScores.player2.toFixed(1)}</strong>
           </div>
+          <label className="appearance-control">
+            <span className="label">Appearance</span>
+            <select
+              value={themeId}
+              onChange={(event) => setThemeId(event.target.value as ThemeId)}
+            >
+              <option value="synth">{themes.synth.label}</option>
+              <option value="tactile">{themes.tactile.label}</option>
+            </select>
+          </label>
         </div>
 
         <p className="prompt">{prompt}</p>
@@ -128,6 +145,7 @@ function App() {
 
         <GameCanvas
           key={isInspectingAreas ? 'inspection-canvas' : 'game-canvas'}
+          theme={activeTheme}
           board={board}
           lines={lines}
           areas={areas}
