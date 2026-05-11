@@ -62,14 +62,13 @@
 }
 
 html {
-  overflow: hidden;
-  overscroll-behavior: none;
+  min-height: 100%;
 }
 
 body {
   margin: 0;
-  overflow: hidden;
-  overscroll-behavior: none;
+  min-height: 100%;
+  overflow-x: hidden;
   touch-action: manipulation;
 }
 

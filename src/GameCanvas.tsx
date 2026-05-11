@@ -41,7 +41,7 @@ const areaColors: Record<LineColor, string> = {
 const SNAP_RADIUS = 0.75
 const MIN_LINE_LENGTH = 0.1
 const MOBILE_CANVAS_PADDING = 24
-const MIN_CANVAS_SIZE = 280
+const MIN_CANVAS_SIZE = 160
 
 const isLineFullyFilled = (line: Line) =>
   line.filledSides?.left === true && line.filledSides?.right === true
@@ -66,10 +66,10 @@ const getResponsiveCanvasSize = (maximumSize: number) => {
     return maximumSize
   }
 
-  return Math.max(
-    MIN_CANVAS_SIZE,
-    Math.min(window.innerWidth, window.innerHeight, maximumSize) - MOBILE_CANVAS_PADDING,
-  )
+  const availableViewportSize =
+    Math.min(window.innerWidth, window.innerHeight, maximumSize) - MOBILE_CANVAS_PADDING
+
+  return Math.max(MIN_CANVAS_SIZE, availableViewportSize)
 }
 
 const isPreviewValid = (start: SnappedPoint, end: SnappedPoint, lines: Line[]) => {
@@ -107,6 +107,7 @@ export function GameCanvas({
   onChoosePendingArea,
 }: GameCanvasProps) {
   const canvasRef = useRef<HTMLCanvasElement | null>(null)
+  const activePointerIdRef = useRef<number | null>(null)
   const [canvasSize, setCanvasSize] = useState(() => getResponsiveCanvasSize(board.canvasSize))
   const [hoveredSnapPoint, setHoveredSnapPoint] = useState<SnappedPoint | null>(null)
   const [selectedSnapPoint, setSelectedSnapPoint] = useState<SnappedPoint | null>(null)
@@ -238,6 +239,18 @@ export function GameCanvas({
     selectedSnapPoint,
   ])
 
+  const isPointerInsideCanvas = (event: PointerEvent<HTMLCanvasElement>) => {
+    const canvas = event.currentTarget
+    const bounds = canvas.getBoundingClientRect()
+
+    return (
+      event.clientX >= bounds.left &&
+      event.clientX <= bounds.right &&
+      event.clientY >= bounds.top &&
+      event.clientY <= bounds.bottom
+    )
+  }
+
   const getBoardPointFromPointerEvent = (event: PointerEvent<HTMLCanvasElement>): Point => {
     const canvas = event.currentTarget
     const bounds = canvas.getBoundingClientRect()
@@ -245,6 +258,11 @@ export function GameCanvas({
     const y = ((event.clientY - bounds.top) / bounds.height) * renderBoard.boardUnits
 
     return { x, y }
+  }
+
+  const resetPointerTurn = () => {
+    setHoveredSnapPoint(null)
+    setSelectedSnapPoint(null)
   }
 
   const findClosestSnapPoint = (point: Point, excludedLineId?: string): SnappedPoint | null => {
@@ -274,6 +292,13 @@ export function GameCanvas({
   const handlePointerMove = (event: PointerEvent<HTMLCanvasElement>) => {
     event.preventDefault()
 
+    if (
+      activePointerIdRef.current !== null &&
+      activePointerIdRef.current !== event.pointerId
+    ) {
+      return
+    }
+
     if (pendingAreaChoice) {
       setHoveredSnapPoint(null)
       return
@@ -287,11 +312,38 @@ export function GameCanvas({
 
   const handlePointerDown = (event: PointerEvent<HTMLCanvasElement>) => {
     event.preventDefault()
+
+    if (activePointerIdRef.current !== null) {
+      return
+    }
+
+    activePointerIdRef.current = event.pointerId
     event.currentTarget.setPointerCapture(event.pointerId)
 
     const boardPoint = getBoardPointFromPointerEvent(event)
     const closestSnapPoint = findClosestSnapPoint(boardPoint, selectedSnapPoint?.lineId)
     setHoveredSnapPoint(closestSnapPoint)
+  }
+
+  const handlePointerUp = (event: PointerEvent<HTMLCanvasElement>) => {
+    event.preventDefault()
+
+    if (activePointerIdRef.current !== event.pointerId) {
+      return
+    }
+
+    activePointerIdRef.current = null
+
+    if (event.currentTarget.hasPointerCapture(event.pointerId)) {
+      event.currentTarget.releasePointerCapture(event.pointerId)
+    }
+
+    if (!isPointerInsideCanvas(event)) {
+      resetPointerTurn()
+      return
+    }
+
+    const boardPoint = getBoardPointFromPointerEvent(event)
 
     if (pendingAreaChoice) {
       const chosenArea = areas.find(
@@ -306,6 +358,9 @@ export function GameCanvas({
 
       return
     }
+
+    const closestSnapPoint = findClosestSnapPoint(boardPoint, selectedSnapPoint?.lineId)
+    setHoveredSnapPoint(closestSnapPoint)
 
     if (!closestSnapPoint) {
       if (!selectedSnapPoint && onFillArea(boardPoint)) {
@@ -329,7 +384,20 @@ export function GameCanvas({
     }
   }
 
+  const handlePointerCancel = (event: PointerEvent<HTMLCanvasElement>) => {
+    if (activePointerIdRef.current !== event.pointerId) {
+      return
+    }
+
+    activePointerIdRef.current = null
+    resetPointerTurn()
+  }
+
   const handlePointerLeave = () => {
+    if (activePointerIdRef.current !== null) {
+      return
+    }
+
     setHoveredSnapPoint(null)
   }
 
@@ -341,6 +409,8 @@ export function GameCanvas({
       className="game-canvas"
       onPointerMove={handlePointerMove}
       onPointerDown={handlePointerDown}
+      onPointerUp={handlePointerUp}
+      onPointerCancel={handlePointerCancel}
       onPointerLeave={handlePointerLeave}
       aria-label={`${renderBoard.boardUnits} by ${renderBoard.boardUnits} game board`}
     />
