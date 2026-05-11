@@ -239,9 +239,12 @@ export function GameCanvas({
     })
 
     lines.forEach((line) => {
+      const lineStart = toCanvasPoint({ x: line.x1, y: line.y1 }, renderBoard)
+      const lineEnd = toCanvasPoint({ x: line.x2, y: line.y2 }, renderBoard)
+
       context.beginPath()
-      context.moveTo(line.x1 * renderBoard.pixelsPerUnit, line.y1 * renderBoard.pixelsPerUnit)
-      context.lineTo(line.x2 * renderBoard.pixelsPerUnit, line.y2 * renderBoard.pixelsPerUnit)
+      context.moveTo(lineStart.x, lineStart.y)
+      context.lineTo(lineEnd.x, lineEnd.y)
       context.strokeStyle = lineColors[line.color]
       context.lineWidth = line.color === 'neutral' ? 4 : 3
       context.lineCap = 'round'
@@ -271,15 +274,18 @@ export function GameCanvas({
     }
 
     if (preview) {
+      const previewStart = toCanvasPoint(
+        { x: preview.line.x1, y: preview.line.y1 },
+        renderBoard,
+      )
+      const previewEnd = toCanvasPoint(
+        { x: preview.line.x2, y: preview.line.y2 },
+        renderBoard,
+      )
+
       context.beginPath()
-      context.moveTo(
-        preview.line.x1 * renderBoard.pixelsPerUnit,
-        preview.line.y1 * renderBoard.pixelsPerUnit,
-      )
-      context.lineTo(
-        preview.line.x2 * renderBoard.pixelsPerUnit,
-        preview.line.y2 * renderBoard.pixelsPerUnit,
-      )
+      context.moveTo(previewStart.x, previewStart.y)
+      context.lineTo(previewEnd.x, previewEnd.y)
       context.strokeStyle = preview.isValid ? lineColors[currentPlayer] : '#ef4444'
       context.lineWidth = 2
       context.setLineDash([8, 8])
