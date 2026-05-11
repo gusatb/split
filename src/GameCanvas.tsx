@@ -2,10 +2,14 @@ import { useEffect, useMemo, useRef, useState } from 'react'
 import type { PointerEvent } from 'react'
 import {
   doLinesIntersect,
-  getClosestPointOnLine,
   getDistance,
-  isPointOnIntersection,
+  isPointOnLineSegment,
 } from './geometry'
+import {
+  buildLegalLineSegments,
+  getClosestPointOnSegment,
+  isLegalLineSegment,
+} from './lineSegments'
 import {
   getAreaPolygonPoints,
   isPointInsidePolygon,
@@ -21,6 +25,10 @@ import type {
   PlayerColor,
   Point,
 } from './types'
+
+interface RenderBoard extends BoardConfig {
+  boardPaddingUnits: number
+}
 
 interface GameCanvasProps {
   board: BoardConfig
@@ -49,17 +57,14 @@ const areaColors: Record<LineColor, string> = {
   player2: 'rgba(220, 38, 38, 0.18)',
 }
 
-const SNAP_RADIUS = 0.75
 const MIN_LINE_LENGTH = 0.1
 const MOBILE_CANVAS_PADDING = 24
 const MIN_CANVAS_SIZE = 160
+const BOARD_PADDING_UNITS = 0.75
 
-const isLineFullyFilled = (line: Line) =>
-  line.filledSides?.left === true && line.filledSides?.right === true
-
-const toCanvasPoint = (point: Point, board: BoardConfig): Point => ({
-  x: point.x * board.pixelsPerUnit,
-  y: point.y * board.pixelsPerUnit,
+const toCanvasPoint = (point: Point, board: RenderBoard): Point => ({
+  x: (point.x + board.boardPaddingUnits) * board.pixelsPerUnit,
+  y: (point.y + board.boardPaddingUnits) * board.pixelsPerUnit,
 })
 
 const createPreviewLine = (start: SnappedPoint, end: SnappedPoint): Line => ({
@@ -83,16 +88,22 @@ const getResponsiveCanvasSize = (maximumSize: number) => {
   return Math.max(MIN_CANVAS_SIZE, availableViewportSize)
 }
 
+const canLineIntersectionBeIgnored = (line: Line, previewLine: Line) => {
+  const previewStart = { x: previewLine.x1, y: previewLine.y1 }
+  const previewEnd = { x: previewLine.x2, y: previewLine.y2 }
+
+  return (
+    isPointOnLineSegment(previewStart, line) ||
+    isPointOnLineSegment(previewEnd, line)
+  )
+}
+
 const isPreviewValid = (start: SnappedPoint, end: SnappedPoint, lines: Line[]) => {
   if (start.lineId === end.lineId) {
     return false
   }
 
   if (getDistance(start.point, end.point) < MIN_LINE_LENGTH) {
-    return false
-  }
-
-  if (isPointOnIntersection(start.point, lines) || isPointOnIntersection(end.point, lines)) {
     return false
   }
 
@@ -103,8 +114,23 @@ const isPreviewValid = (start: SnappedPoint, end: SnappedPoint, lines: Line[]) =
       return false
     }
 
-    return doLinesIntersect(line, previewLine)
+    return doLinesIntersect(line, previewLine) && !canLineIntersectionBeIgnored(line, previewLine)
   })
+}
+
+const getPolygonCentroid = (points: Point[]) => {
+  const pointTotal = points.reduce(
+    (total, point) => ({
+      x: total.x + point.x,
+      y: total.y + point.y,
+    }),
+    { x: 0, y: 0 },
+  )
+
+  return {
+    x: pointTotal.x / points.length,
+    y: pointTotal.y / points.length,
+  }
 }
 
 export function GameCanvas({
@@ -127,11 +153,13 @@ export function GameCanvas({
   const [hoveredSnapPoint, setHoveredSnapPoint] = useState<SnappedPoint | null>(null)
   const [selectedSnapPoint, setSelectedSnapPoint] = useState<SnappedPoint | null>(null)
   const [inspectionPoint, setInspectionPoint] = useState<Point | null>(null)
-  const renderBoard = useMemo(
+  const legalLineSegments = useMemo(() => buildLegalLineSegments(lines, areas), [areas, lines])
+  const renderBoard: RenderBoard = useMemo(
     () => ({
       ...board,
+      boardPaddingUnits: BOARD_PADDING_UNITS,
       canvasSize,
-      pixelsPerUnit: canvasSize / board.boardUnits,
+      pixelsPerUnit: canvasSize / (board.boardUnits + BOARD_PADDING_UNITS * 2),
     }),
     [board, canvasSize],
   )
@@ -195,6 +223,19 @@ export function GameCanvas({
         ? 'rgba(250, 204, 21, 0.22)'
         : areaColors[area.color]
       context.fill()
+
+      if (pendingAreaChoice?.areaIds.includes(area.id)) {
+        const labelPoint = toCanvasPoint(
+          getPolygonCentroid(getAreaPolygonPoints(area, lines)),
+          renderBoard,
+        )
+
+        context.fillStyle = '#713f12'
+        context.font = '700 18px system-ui, sans-serif'
+        context.textAlign = 'center'
+        context.textBaseline = 'middle'
+        context.fillText(area.geometricArea.toFixed(1), labelPoint.x, labelPoint.y)
+      }
     })
 
     lines.forEach((line) => {
@@ -305,11 +346,23 @@ export function GameCanvas({
     )
   }
 
+  const isPointInsideGameScreen = (point: Point) =>
+    point.x >= 0 &&
+    point.x <= renderBoard.boardUnits &&
+    point.y >= 0 &&
+    point.y <= renderBoard.boardUnits
+
   const getBoardPointFromPointerEvent = (event: PointerEvent<HTMLCanvasElement>): Point => {
     const canvas = event.currentTarget
     const bounds = canvas.getBoundingClientRect()
-    const x = ((event.clientX - bounds.left) / bounds.width) * renderBoard.boardUnits
-    const y = ((event.clientY - bounds.top) / bounds.height) * renderBoard.boardUnits
+    const x =
+      ((event.clientX - bounds.left) / bounds.width) *
+        (renderBoard.boardUnits + renderBoard.boardPaddingUnits * 2) -
+      renderBoard.boardPaddingUnits
+    const y =
+      ((event.clientY - bounds.top) / bounds.height) *
+        (renderBoard.boardUnits + renderBoard.boardPaddingUnits * 2) -
+      renderBoard.boardPaddingUnits
 
     return { x, y }
   }
@@ -333,20 +386,27 @@ export function GameCanvas({
   }
 
   const findClosestSnapPoint = (point: Point, excludedLineId?: string): SnappedPoint | null => {
-    const closestSnap = lines
-      .filter((line) => line.id !== excludedLineId && !isLineFullyFilled(line))
-      .map((line) => {
-        const snapPoint = getClosestPointOnLine(point, line)
+    if (!isPointInsideGameScreen(point)) {
+      return null
+    }
+
+    const closestSnap = legalLineSegments
+      .filter(
+        (segment) =>
+          segment.lineId !== excludedLineId && isLegalLineSegment(segment),
+      )
+      .map((segment) => {
+        const snapPoint = getClosestPointOnSegment(point, segment)
 
         return {
           point: snapPoint,
-          lineId: line.id,
+          lineId: segment.lineId,
           distance: getDistance(point, snapPoint),
         }
       })
       .sort((firstPoint, secondPoint) => firstPoint.distance - secondPoint.distance)[0]
 
-    if (!closestSnap || closestSnap.distance > SNAP_RADIUS) {
+    if (!closestSnap) {
       return null
     }
 

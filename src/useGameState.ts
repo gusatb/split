@@ -428,17 +428,11 @@ export function useGameState(
         return currentState
       }
 
-      const nextLines = [...currentState.lines, newLine]
-      const nextAreas = currentState.areas.flatMap((area) =>
-        area.id === areaToSplit.id ? splitResult.areas : [area],
-      )
-
       if (areaToSplit.geometricArea <= FILL_CAPTURE_LIMIT) {
-        const capturedAreas = splitResult.areas.map((area) => ({
-          ...area,
+        const capturedArea = {
+          ...areaToSplit,
           color: currentState.currentPlayer,
-        }))
-        const capturedAreaIds = new Set(capturedAreas.map((area) => area.id))
+        }
         const { playerScores, winner } = addScore(
           currentState.playerScores,
           currentState.currentPlayer,
@@ -447,11 +441,9 @@ export function useGameState(
 
         return {
           ...currentState,
-          lines: markAreaBoundaryFilled(nextLines, capturedAreas),
-          areas: nextAreas.map((area) =>
-            capturedAreaIds.has(area.id)
-              ? capturedAreas.find((capturedArea) => capturedArea.id === area.id)!
-              : area,
+          lines: markAreaBoundaryFilled(currentState.lines, [capturedArea]),
+          areas: currentState.areas.map((area) =>
+            area.id === capturedArea.id ? capturedArea : area,
           ),
           playerScores,
           winner,
@@ -460,6 +452,10 @@ export function useGameState(
         }
       }
 
+      const nextLines = [...currentState.lines, newLine]
+      const nextAreas = currentState.areas.flatMap((area) =>
+        area.id === areaToSplit.id ? splitResult.areas : [area],
+      )
       const startLine = currentState.lines.find((line) => line.id === start.lineId)
       const endLine = currentState.lines.find((line) => line.id === end.lineId)
       const isScoringSplit =
