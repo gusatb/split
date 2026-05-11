@@ -58,6 +58,18 @@
   line-height: 1.35;
 }
 
+.inspection-readout {
+  display: grid;
+  gap: 4px;
+  width: min(600px, 100%);
+  box-sizing: border-box;
+  padding: 12px;
+  border: 1px solid rgba(202, 138, 4, 0.45);
+  border-radius: 10px;
+  color: #713f12;
+  background: rgba(250, 204, 21, 0.18);
+}
+
 .game-actions {
   display: flex;
   flex-wrap: wrap;
@@ -96,6 +108,10 @@
   cursor: crosshair;
   touch-action: none;
   user-select: none;
+}
+
+.game-canvas.inspecting {
+  cursor: help;
 }
 
 .victory-banner {
