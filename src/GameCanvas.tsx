@@ -162,18 +162,6 @@ export function GameCanvas({
   }, [board.canvasSize])
 
   useEffect(() => {
-    if (!inspectionMode) {
-      setInspectionPoint(null)
-      onInspectAreaChange(null)
-      return
-    }
-
-    activePointerIdRef.current = null
-    setHoveredSnapPoint(null)
-    setSelectedSnapPoint(null)
-  }, [inspectionMode, onInspectAreaChange])
-
-  useEffect(() => {
     const canvas = canvasRef.current
 
     if (!canvas) {

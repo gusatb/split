@@ -127,6 +127,7 @@ function App() {
         </div>
 
         <GameCanvas
+          key={isInspectingAreas ? 'inspection-canvas' : 'game-canvas'}
           board={board}
           lines={lines}
           areas={areas}
