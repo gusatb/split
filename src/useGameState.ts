@@ -335,17 +335,36 @@ const addScore = (
   }
 }
 
-const markAreaBoundaryFilled = (lines: Line[], area: Area[]) => {
-  const lineIds = new Set(area.flatMap((capturedArea) => capturedArea.points.map((point) => point.lineId)))
+const markAreaBoundaryFilled = (lines: Line[], areas: Area[]) => {
+  const boundaryCounts = areas.reduce<Record<string, number>>((counts, capturedArea) => {
+    capturedArea.points.forEach((point) => {
+      counts[point.lineId] = (counts[point.lineId] ?? 0) + 1
+    })
+
+    return counts
+  }, {})
 
   return lines.map((line) => {
-    if (!lineIds.has(line.id)) {
+    const boundaryCount = boundaryCounts[line.id] ?? 0
+
+    if (boundaryCount === 0) {
       return line
     }
 
     const filledSides = line.filledSides ?? {
       left: line.choice === 2,
       right: line.choice === 1,
+    }
+
+    if (boundaryCount >= 2) {
+      return {
+        ...line,
+        choice: 2 as const,
+        filledSides: {
+          left: true,
+          right: true,
+        },
+      }
     }
 
     if (!filledSides.right) {
@@ -413,6 +432,34 @@ export function useGameState(
       const nextAreas = currentState.areas.flatMap((area) =>
         area.id === areaToSplit.id ? splitResult.areas : [area],
       )
+
+      if (areaToSplit.geometricArea <= FILL_CAPTURE_LIMIT) {
+        const capturedAreas = splitResult.areas.map((area) => ({
+          ...area,
+          color: currentState.currentPlayer,
+        }))
+        const capturedAreaIds = new Set(capturedAreas.map((area) => area.id))
+        const { playerScores, winner } = addScore(
+          currentState.playerScores,
+          currentState.currentPlayer,
+          areaToSplit.geometricArea,
+        )
+
+        return {
+          ...currentState,
+          lines: markAreaBoundaryFilled(nextLines, capturedAreas),
+          areas: nextAreas.map((area) =>
+            capturedAreaIds.has(area.id)
+              ? capturedAreas.find((capturedArea) => capturedArea.id === area.id)!
+              : area,
+          ),
+          playerScores,
+          winner,
+          currentPlayer: getNextPlayer(currentState.currentPlayer),
+          turnCount: currentState.turnCount + 1,
+        }
+      }
+
       const startLine = currentState.lines.find((line) => line.id === start.lineId)
       const endLine = currentState.lines.find((line) => line.id === end.lineId)
       const isScoringSplit =

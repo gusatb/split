@@ -13,7 +13,14 @@ import {
   type PendingAreaChoice,
   type SnappedPoint,
 } from './useGameState'
-import type { Area, Line, LineColor, PlayerColor, Point } from './types'
+import type {
+  Area,
+  AreaInspectionSnapshot,
+  Line,
+  LineColor,
+  PlayerColor,
+  Point,
+} from './types'
 
 interface GameCanvasProps {
   board: BoardConfig
@@ -21,9 +28,13 @@ interface GameCanvasProps {
   areas: Area[]
   currentPlayer: PlayerColor
   pendingAreaChoice: PendingAreaChoice | null
+  inspectionMode: boolean
+  inspectionAreas: AreaInspectionSnapshot[]
+  inspectedAreaId: string | null
   onDrawLine: (start: SnappedPoint, end: SnappedPoint) => void
   onFillArea: (point: Point) => boolean
   onChoosePendingArea: (areaId: string) => void
+  onInspectAreaChange: (area: AreaInspectionSnapshot | null) => void
 }
 
 const lineColors: Record<LineColor, string> = {
@@ -102,15 +113,20 @@ export function GameCanvas({
   areas,
   currentPlayer,
   pendingAreaChoice,
+  inspectionMode,
+  inspectionAreas,
+  inspectedAreaId,
   onDrawLine,
   onFillArea,
   onChoosePendingArea,
+  onInspectAreaChange,
 }: GameCanvasProps) {
   const canvasRef = useRef<HTMLCanvasElement | null>(null)
   const activePointerIdRef = useRef<number | null>(null)
   const [canvasSize, setCanvasSize] = useState(() => getResponsiveCanvasSize(board.canvasSize))
   const [hoveredSnapPoint, setHoveredSnapPoint] = useState<SnappedPoint | null>(null)
   const [selectedSnapPoint, setSelectedSnapPoint] = useState<SnappedPoint | null>(null)
+  const [inspectionPoint, setInspectionPoint] = useState<Point | null>(null)
   const renderBoard = useMemo(
     () => ({
       ...board,
@@ -191,6 +207,28 @@ export function GameCanvas({
       context.stroke()
     })
 
+    if (inspectionMode && inspectedAreaId) {
+      const inspectedArea = inspectionAreas.find((area) => area.id === inspectedAreaId)
+
+      if (inspectedArea) {
+        const polygonPoints = inspectedArea.polygon.map((point) =>
+          toCanvasPoint(point, renderBoard),
+        )
+
+        if (polygonPoints.length >= 3) {
+          context.beginPath()
+          context.moveTo(polygonPoints[0].x, polygonPoints[0].y)
+          polygonPoints.slice(1).forEach((point) => context.lineTo(point.x, point.y))
+          context.closePath()
+          context.fillStyle = 'rgba(250, 204, 21, 0.24)'
+          context.strokeStyle = '#ca8a04'
+          context.lineWidth = 3
+          context.fill()
+          context.stroke()
+        }
+      }
+    }
+
     if (preview) {
       context.beginPath()
       context.moveTo(
@@ -228,11 +266,27 @@ export function GameCanvas({
       context.fillStyle = lineColors[currentPlayer]
       context.fill()
     }
+
+    if (inspectionMode && inspectionPoint) {
+      const canvasPoint = toCanvasPoint(inspectionPoint, renderBoard)
+
+      context.beginPath()
+      context.arc(canvasPoint.x, canvasPoint.y, 8, 0, Math.PI * 2)
+      context.fillStyle = '#facc15'
+      context.strokeStyle = '#111827'
+      context.lineWidth = 2
+      context.fill()
+      context.stroke()
+    }
   }, [
     areas,
     currentPlayer,
     hoveredSnapPoint,
     lines,
+    inspectedAreaId,
+    inspectionAreas,
+    inspectionMode,
+    inspectionPoint,
     pendingAreaChoice?.areaIds,
     preview,
     renderBoard,
@@ -263,6 +317,19 @@ export function GameCanvas({
   const resetPointerTurn = () => {
     setHoveredSnapPoint(null)
     setSelectedSnapPoint(null)
+  }
+
+  const updateInspectionIndicator = (point: Point | null) => {
+    setInspectionPoint(point)
+
+    if (!point) {
+      onInspectAreaChange(null)
+      return
+    }
+
+    onInspectAreaChange(
+      inspectionAreas.find((area) => isPointInsidePolygon(point, area.polygon)) ?? null,
+    )
   }
 
   const findClosestSnapPoint = (point: Point, excludedLineId?: string): SnappedPoint | null => {
@@ -299,12 +366,18 @@ export function GameCanvas({
       return
     }
 
+    const boardPoint = getBoardPointFromPointerEvent(event)
+
+    if (inspectionMode) {
+      updateInspectionIndicator(boardPoint)
+      return
+    }
+
     if (pendingAreaChoice) {
       setHoveredSnapPoint(null)
       return
     }
 
-    const boardPoint = getBoardPointFromPointerEvent(event)
     const closestSnapPoint = findClosestSnapPoint(boardPoint, selectedSnapPoint?.lineId)
 
     setHoveredSnapPoint(closestSnapPoint)
@@ -321,6 +394,12 @@ export function GameCanvas({
     event.currentTarget.setPointerCapture(event.pointerId)
 
     const boardPoint = getBoardPointFromPointerEvent(event)
+
+    if (inspectionMode) {
+      updateInspectionIndicator(boardPoint)
+      return
+    }
+
     const closestSnapPoint = findClosestSnapPoint(boardPoint, selectedSnapPoint?.lineId)
     setHoveredSnapPoint(closestSnapPoint)
   }
@@ -339,11 +418,21 @@ export function GameCanvas({
     }
 
     if (!isPointerInsideCanvas(event)) {
+      if (inspectionMode) {
+        updateInspectionIndicator(null)
+        return
+      }
+
       resetPointerTurn()
       return
     }
 
     const boardPoint = getBoardPointFromPointerEvent(event)
+
+    if (inspectionMode) {
+      updateInspectionIndicator(boardPoint)
+      return
+    }
 
     if (pendingAreaChoice) {
       const chosenArea = areas.find(
@@ -390,10 +479,21 @@ export function GameCanvas({
     }
 
     activePointerIdRef.current = null
+
+    if (inspectionMode) {
+      updateInspectionIndicator(null)
+      return
+    }
+
     resetPointerTurn()
   }
 
   const handlePointerLeave = () => {
+    if (inspectionMode) {
+      updateInspectionIndicator(null)
+      return
+    }
+
     if (activePointerIdRef.current !== null) {
       return
     }
@@ -406,7 +506,7 @@ export function GameCanvas({
       ref={canvasRef}
       width={renderBoard.canvasSize}
       height={renderBoard.canvasSize}
-      className="game-canvas"
+      className={inspectionMode ? 'game-canvas inspecting' : 'game-canvas'}
       onPointerMove={handlePointerMove}
       onPointerDown={handlePointerDown}
       onPointerUp={handlePointerUp}

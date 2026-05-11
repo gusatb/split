@@ -34,3 +34,10 @@ export interface Area {
   points: PointReference[]
   geometricArea: number
 }
+
+export interface AreaInspectionSnapshot {
+  id: string
+  color: AreaColor
+  geometricArea: number
+  polygon: Point[]
+}
