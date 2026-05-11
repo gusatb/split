@@ -10,7 +10,8 @@ import type { Area, AreaColor, Line, PlayerColor, Point, PointReference } from '
 
 const BOARD_UNITS = 10
 const CANVAS_SIZE = 600
-const FILL_CAPTURE_LIMIT = 5
+export const FILL_CAPTURE_LIMIT = 5
+export const MIN_RESULTING_AREA = 1
 const WINNING_SCORE = 50
 
 const createInitialLines = (): Line[] => [
@@ -80,8 +81,13 @@ export interface SnappedPoint {
   lineId: string
 }
 
-interface SplitResult {
+export interface SplitResult {
   areas: [Area, Area]
+}
+
+export interface SplitMoveResult {
+  areaToSplit: Area
+  splitResult: SplitResult
 }
 
 const getNextPlayer = (player: PlayerColor): PlayerColor =>
@@ -319,6 +325,33 @@ const findAreaToSplit = (areas: Area[], lines: Line[], newLine: Line) =>
     return splitAreaByLine(area, lines, newLine) !== null
   })
 
+export const getSplitMoveResult = (
+  areas: Area[],
+  lines: Line[],
+  newLine: Line,
+): SplitMoveResult | null => {
+  const areaToSplit = findAreaToSplit(areas, lines, newLine)
+
+  if (!areaToSplit) {
+    return null
+  }
+
+  const splitResult = splitAreaByLine(areaToSplit, lines, newLine)
+
+  if (!splitResult) {
+    return null
+  }
+
+  return {
+    areaToSplit,
+    splitResult,
+  }
+}
+
+export const isSplitMoveAllowed = ({ areaToSplit, splitResult }: SplitMoveResult) =>
+  areaToSplit.geometricArea <= FILL_CAPTURE_LIMIT ||
+  splitResult.areas.every((area) => area.geometricArea >= MIN_RESULTING_AREA)
+
 const addScore = (
   playerScores: Record<PlayerColor, number>,
   player: PlayerColor,
@@ -416,17 +449,13 @@ export function useGameState(
         color: currentState.currentPlayer,
         choice: 0,
       }
-      const areaToSplit = findAreaToSplit(currentState.areas, currentState.lines, newLine)
+      const splitMoveResult = getSplitMoveResult(currentState.areas, currentState.lines, newLine)
 
-      if (!areaToSplit) {
+      if (!splitMoveResult || !isSplitMoveAllowed(splitMoveResult)) {
         return currentState
       }
 
-      const splitResult = splitAreaByLine(areaToSplit, currentState.lines, newLine)
-
-      if (!splitResult) {
-        return currentState
-      }
+      const { areaToSplit, splitResult } = splitMoveResult
 
       if (areaToSplit.geometricArea <= FILL_CAPTURE_LIMIT) {
         const capturedArea = {
