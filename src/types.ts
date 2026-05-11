@@ -41,3 +41,12 @@ export interface AreaInspectionSnapshot {
   geometricArea: number
   polygon: Point[]
 }
+
+export interface LegalLineSegment {
+  id: string
+  lineId: string
+  start: Point
+  end: Point
+  leftAreaScored: boolean
+  rightAreaScored: boolean
+}
