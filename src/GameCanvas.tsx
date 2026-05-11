@@ -11,6 +11,7 @@ import {
   getClosestPointOnSegment,
   isLegalLineSegment,
 } from './lineSegments'
+import { getAreaFill, getLineStroke, type ThemeConfig } from './themes'
 import {
   FILL_CAPTURE_LIMIT,
   getAreaPolygonPoints,
@@ -25,7 +26,6 @@ import type {
   Area,
   AreaInspectionSnapshot,
   Line,
-  LineColor,
   PlayerColor,
   Point,
 } from './types'
@@ -35,6 +35,7 @@ interface RenderBoard extends BoardConfig {
 }
 
 interface GameCanvasProps {
+  theme: ThemeConfig
   board: BoardConfig
   lines: Line[]
   areas: Area[]
@@ -47,18 +48,6 @@ interface GameCanvasProps {
   onFillArea: (point: Point) => boolean
   onChoosePendingArea: (areaId: string) => void
   onInspectAreaChange: (area: AreaInspectionSnapshot | null) => void
-}
-
-const lineColors: Record<LineColor, string> = {
-  neutral: '#111827',
-  player1: '#2563eb',
-  player2: '#dc2626',
-}
-
-const areaColors: Record<LineColor, string> = {
-  neutral: 'rgba(255, 255, 255, 0)',
-  player1: 'rgba(37, 99, 235, 0.18)',
-  player2: 'rgba(220, 38, 38, 0.18)',
 }
 
 const MIN_LINE_LENGTH = 0.1
@@ -168,7 +157,26 @@ const getPolygonCentroid = (points: Point[]) => {
   }
 }
 
+const resetCanvasEffects = (context: CanvasRenderingContext2D) => {
+  context.shadowColor = 'transparent'
+  context.shadowBlur = 0
+  context.shadowOffsetX = 0
+  context.shadowOffsetY = 0
+}
+
+const applyStrokeEffects = (
+  context: CanvasRenderingContext2D,
+  theme: ThemeConfig,
+  stroke: string,
+) => {
+  context.shadowBlur = theme.effects.shadowBlur
+  context.shadowColor = theme.effects.shadowColor === 'stroke' ? stroke : theme.effects.shadowColor
+  context.shadowOffsetX = theme.effects.shadowOffsetX
+  context.shadowOffsetY = theme.effects.shadowOffsetY
+}
+
 export function GameCanvas({
+  theme,
   board,
   lines,
   areas,
@@ -237,11 +245,13 @@ export function GameCanvas({
       return
     }
 
+    resetCanvasEffects(context)
     context.clearRect(0, 0, renderBoard.canvasSize, renderBoard.canvasSize)
-    context.fillStyle = '#ffffff'
+    context.fillStyle = theme.background
     context.fillRect(0, 0, renderBoard.canvasSize, renderBoard.canvasSize)
 
     areas.forEach((area) => {
+      resetCanvasEffects(context)
       const areaPolygon = getAreaPolygonPoints(area, lines)
       const polygonPoints = areaPolygon.map((point) => toCanvasPoint(point, renderBoard))
 
@@ -258,13 +268,14 @@ export function GameCanvas({
       polygonPoints.slice(1).forEach((point) => context.lineTo(point.x, point.y))
       context.closePath()
       context.fillStyle = isPendingChoice
-        ? 'rgba(250, 204, 21, 0.22)'
-        : areaColors[area.color]
+        ? theme.pendingFill
+        : getAreaFill(theme, area.color)
       context.fill()
 
       if (isFreeTakeArea) {
-        context.fillStyle = 'rgba(34, 197, 94, 0.18)'
-        context.strokeStyle = '#16a34a'
+        resetCanvasEffects(context)
+        context.fillStyle = theme.freeFill
+        context.strokeStyle = theme.freeStroke
         context.lineWidth = 2
         context.fill()
         context.stroke()
@@ -277,7 +288,8 @@ export function GameCanvas({
           ...(inspectionMode && isFreeTakeArea ? ['free'] : []),
         ]
 
-        context.fillStyle = isFreeTakeArea ? '#166534' : '#713f12'
+        resetCanvasEffects(context)
+        context.fillStyle = isFreeTakeArea ? theme.freeStroke : theme.text
         context.textAlign = 'center'
         context.textBaseline = 'middle'
         labelLines.forEach((label, index) => {
@@ -295,17 +307,21 @@ export function GameCanvas({
     lines.forEach((line) => {
       const lineStart = toCanvasPoint({ x: line.x1, y: line.y1 }, renderBoard)
       const lineEnd = toCanvasPoint({ x: line.x2, y: line.y2 }, renderBoard)
+      const stroke = getLineStroke(theme, line.color)
 
       context.beginPath()
       context.moveTo(lineStart.x, lineStart.y)
       context.lineTo(lineEnd.x, lineEnd.y)
-      context.strokeStyle = lineColors[line.color]
+      context.strokeStyle = stroke
       context.lineWidth = line.color === 'neutral' ? 4 : 3
       context.lineCap = 'round'
+      applyStrokeEffects(context, theme, stroke)
       context.stroke()
+      resetCanvasEffects(context)
     })
 
     if (inspectionMode && inspectedAreaId) {
+      resetCanvasEffects(context)
       const inspectedArea = inspectionAreas.find((area) => area.id === inspectedAreaId)
 
       if (inspectedArea) {
@@ -318,8 +334,8 @@ export function GameCanvas({
           context.moveTo(polygonPoints[0].x, polygonPoints[0].y)
           polygonPoints.slice(1).forEach((point) => context.lineTo(point.x, point.y))
           context.closePath()
-          context.fillStyle = 'rgba(250, 204, 21, 0.24)'
-          context.strokeStyle = '#ca8a04'
+          context.fillStyle = theme.pendingFill
+          context.strokeStyle = theme.pendingStroke
           context.lineWidth = 3
           context.fill()
           context.stroke()
@@ -328,6 +344,7 @@ export function GameCanvas({
     }
 
     if (preview) {
+      const stroke = preview.isValid ? getLineStroke(theme, currentPlayer) : '#EF4444'
       const previewStart = toCanvasPoint(
         { x: preview.line.x1, y: preview.line.y1 },
         renderBoard,
@@ -340,44 +357,71 @@ export function GameCanvas({
       context.beginPath()
       context.moveTo(previewStart.x, previewStart.y)
       context.lineTo(previewEnd.x, previewEnd.y)
-      context.strokeStyle = preview.isValid ? lineColors[currentPlayer] : '#ef4444'
+      context.strokeStyle = stroke
       context.lineWidth = 2
       context.setLineDash([8, 8])
+      applyStrokeEffects(context, theme, stroke)
       context.stroke()
       context.setLineDash([])
+      resetCanvasEffects(context)
     }
 
     if (hoveredSnapPoint) {
       const canvasPoint = toCanvasPoint(hoveredSnapPoint.point, renderBoard)
 
-      context.beginPath()
-      context.arc(canvasPoint.x, canvasPoint.y, 6, 0, Math.PI * 2)
-      context.fillStyle = '#facc15'
-      context.strokeStyle = '#854d0e'
+      resetCanvasEffects(context)
+      context.strokeStyle = theme.cursor === 'glowCircle' ? theme.accent : theme.neutralLine
       context.lineWidth = 2
-      context.fill()
-      context.stroke()
+
+      if (theme.cursor === 'glowCircle') {
+        applyStrokeEffects(context, theme, theme.accent)
+        context.beginPath()
+        context.arc(canvasPoint.x, canvasPoint.y, 7, 0, Math.PI * 2)
+        context.stroke()
+        resetCanvasEffects(context)
+      } else {
+        context.beginPath()
+        context.moveTo(canvasPoint.x - 7, canvasPoint.y)
+        context.lineTo(canvasPoint.x + 7, canvasPoint.y)
+        context.moveTo(canvasPoint.x, canvasPoint.y - 7)
+        context.lineTo(canvasPoint.x, canvasPoint.y + 7)
+        context.stroke()
+      }
     }
 
     if (selectedSnapPoint) {
       const canvasPoint = toCanvasPoint(selectedSnapPoint.point, renderBoard)
+      const stroke = getLineStroke(theme, currentPlayer)
 
+      resetCanvasEffects(context)
       context.beginPath()
       context.arc(canvasPoint.x, canvasPoint.y, 7, 0, Math.PI * 2)
-      context.fillStyle = lineColors[currentPlayer]
-      context.fill()
+      context.strokeStyle = stroke
+      context.lineWidth = 3
+      applyStrokeEffects(context, theme, stroke)
+      context.stroke()
+      resetCanvasEffects(context)
     }
 
     if (inspectionMode && inspectionPoint) {
       const canvasPoint = toCanvasPoint(inspectionPoint, renderBoard)
 
+      resetCanvasEffects(context)
       context.beginPath()
-      context.arc(canvasPoint.x, canvasPoint.y, 8, 0, Math.PI * 2)
-      context.fillStyle = '#facc15'
-      context.strokeStyle = '#111827'
+      context.strokeStyle = theme.accent
       context.lineWidth = 2
-      context.fill()
-      context.stroke()
+      if (theme.cursor === 'glowCircle') {
+        applyStrokeEffects(context, theme, theme.accent)
+        context.arc(canvasPoint.x, canvasPoint.y, 8, 0, Math.PI * 2)
+        context.stroke()
+      } else {
+        context.moveTo(canvasPoint.x - 8, canvasPoint.y)
+        context.lineTo(canvasPoint.x + 8, canvasPoint.y)
+        context.moveTo(canvasPoint.x, canvasPoint.y - 8)
+        context.lineTo(canvasPoint.x, canvasPoint.y + 8)
+        context.stroke()
+      }
+      resetCanvasEffects(context)
     }
   }, [
     areas,
@@ -392,6 +436,7 @@ export function GameCanvas({
     preview,
     renderBoard,
     selectedSnapPoint,
+    theme,
   ])
 
   const isPointerInsideCanvas = (event: PointerEvent<HTMLCanvasElement>) => {

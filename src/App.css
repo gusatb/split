@@ -22,17 +22,34 @@
 .game-status {
   display: grid;
   width: min(600px, 100%);
-  grid-template-columns: repeat(3, 1fr);
+  grid-template-columns: repeat(4, 1fr);
   gap: 12px;
 }
 
-.game-status > div {
+.game-status > div,
+.appearance-control {
   display: grid;
   gap: 4px;
   padding: 10px;
   border: 1px solid var(--border);
   border-radius: 10px;
   background: var(--social-bg);
+}
+
+.appearance-control select {
+  width: 100%;
+  min-width: 0;
+  border: 1px solid var(--accent-border);
+  border-radius: 8px;
+  padding: 4px 8px;
+  color: var(--text-h);
+  background: var(--bg);
+  font: inherit;
+}
+
+.appearance-control select:focus-visible {
+  outline: 2px solid var(--accent);
+  outline-offset: 2px;
 }
 
 .label {
