@@ -1,10 +1,11 @@
-import { useState } from 'react'
+import { useEffect, useState } from 'react'
 import {
   arePointsEqual,
   calculatePolygonArea,
   GEOMETRY_EPSILON,
   isPointOnLineSegment,
 } from './geometry'
+import { defaultGameId, localStorageAdapter, type StorageAdapter } from './storage'
 import type { Area, AreaColor, Line, PlayerColor, Point, PointReference } from './types'
 
 const BOARD_UNITS = 10
@@ -369,8 +370,17 @@ const markAreaBoundaryFilled = (lines: Line[], area: Area[]) => {
   })
 }
 
-export function useGameState() {
-  const [gameState, setGameState] = useState<GameState>(() => createInitialGameState())
+export function useGameState(
+  storageAdapter: StorageAdapter = localStorageAdapter,
+  gameId = defaultGameId,
+) {
+  const [gameState, setGameState] = useState<GameState>(
+    () => storageAdapter.loadGameState(gameId) ?? createInitialGameState(),
+  )
+
+  useEffect(() => {
+    storageAdapter.saveGameState(gameState, gameId)
+  }, [gameId, gameState, storageAdapter])
 
   const drawLine = (start: SnappedPoint, end: SnappedPoint) => {
     setGameState((currentState) => {
@@ -541,6 +551,10 @@ export function useGameState() {
     })
   }
 
+  const resetGame = () => {
+    setGameState(createInitialGameState())
+  }
+
   return {
     ...gameState,
     actions: {
@@ -548,6 +562,7 @@ export function useGameState() {
       fillAreaAt,
       choosePendingArea,
       applyPieRule,
+      resetGame,
     },
   }
 }

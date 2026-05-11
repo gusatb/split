@@ -51,19 +51,26 @@
 }
 
 #root {
-  width: 1126px;
+  width: 100%;
   max-width: 100%;
   margin: 0 auto;
   text-align: center;
-  border-inline: 1px solid var(--border);
-  min-height: 100svh;
+  min-height: 100dvh;
   display: flex;
   flex-direction: column;
   box-sizing: border-box;
 }
 
+html {
+  overflow: hidden;
+  overscroll-behavior: none;
+}
+
 body {
   margin: 0;
+  overflow: hidden;
+  overscroll-behavior: none;
+  touch-action: manipulation;
 }
 
 h1,
@@ -74,11 +81,10 @@ h2 {
 }
 
 h1 {
-  font-size: 56px;
+  font-size: clamp(32px, 8vw, 56px);
   letter-spacing: -1.68px;
-  margin: 32px 0;
+  margin: 12px 0;
   @media (max-width: 1024px) {
-    font-size: 36px;
     margin: 20px 0;
   }
 }

@@ -15,9 +15,35 @@ function App() {
     winner,
   } = useGameState()
   const canApplyPieRule = turnCount === 1 && !winner && !pendingAreaChoice
+  const turnLabel = winner
+    ? `${winner} wins`
+    : canApplyPieRule
+      ? 'Player 2 color choice'
+      : currentPlayer
+  const prompt = (() => {
+    if (winner) {
+      return `${winner} surpassed 50 points. Start a new pass-and-play session to play again.`
+    }
+
+    if (pendingAreaChoice) {
+      return `${pendingAreaChoice.choosingPlayer} must choose which highlighted sub-area scores for ${pendingAreaChoice.scoringPlayer}.`
+    }
+
+    if (turnCount === 0) {
+      return 'Turn 1: Player 1 draws the first line between two existing edges.'
+    }
+
+    if (canApplyPieRule) {
+      return 'Turn 2: Player 2 chooses which color to play as. Swap colors now, or keep Player 2 by drawing the next move.'
+    }
+
+    return 'Draw a split between two legal snapped edge points, or tap a neutral area worth 5 or less to fill it.'
+  })()
 
   return (
     <main className="app-shell">
+      {winner ? <div className="victory-banner">{winner} wins!</div> : null}
+
       <section className="game-panel" aria-labelledby="game-title">
         <div className="game-header">
           <p className="eyebrow">Split</p>
@@ -31,7 +57,7 @@ function App() {
         <div className="game-status" aria-live="polite">
           <div>
             <span className="label">Turn</span>
-            <strong>{winner ? `${winner} wins` : currentPlayer}</strong>
+            <strong>{turnLabel}</strong>
           </div>
           <div>
             <span className="label">Player 1</span>
@@ -43,23 +69,18 @@ function App() {
           </div>
         </div>
 
-        {pendingAreaChoice ? (
-          <p className="prompt">
-            {pendingAreaChoice.choosingPlayer} must choose which highlighted sub-area scores for{' '}
-            {pendingAreaChoice.scoringPlayer}.
-          </p>
-        ) : (
-          <p className="prompt">
-            Click a line edge to start a split, then click another edge to finish it. Click inside a
-            neutral area of size 5 or less to fill it.
-          </p>
-        )}
+        <p className="prompt">{prompt}</p>
 
-        {canApplyPieRule ? (
-          <button type="button" className="pie-rule-button" onClick={actions.applyPieRule}>
-            Apply pie rule: swap colors
+        <div className="game-actions">
+          {canApplyPieRule ? (
+            <button type="button" className="game-button" onClick={actions.applyPieRule}>
+              Swap colors
+            </button>
+          ) : null}
+          <button type="button" className="game-button secondary" onClick={actions.resetGame}>
+            Reset local game
           </button>
-        ) : null}
+        </div>
 
         <GameCanvas
           board={board}

@@ -1,5 +1,5 @@
 import { useEffect, useMemo, useRef, useState } from 'react'
-import type { MouseEvent } from 'react'
+import type { PointerEvent } from 'react'
 import {
   doLinesIntersect,
   getClosestPointOnLine,
@@ -40,6 +40,8 @@ const areaColors: Record<LineColor, string> = {
 
 const SNAP_RADIUS = 0.75
 const MIN_LINE_LENGTH = 0.1
+const MOBILE_CANVAS_PADDING = 24
+const MIN_CANVAS_SIZE = 280
 
 const isLineFullyFilled = (line: Line) =>
   line.filledSides?.left === true && line.filledSides?.right === true
@@ -58,6 +60,17 @@ const createPreviewLine = (start: SnappedPoint, end: SnappedPoint): Line => ({
   color: 'neutral',
   choice: 0,
 })
+
+const getResponsiveCanvasSize = (maximumSize: number) => {
+  if (typeof window === 'undefined') {
+    return maximumSize
+  }
+
+  return Math.max(
+    MIN_CANVAS_SIZE,
+    Math.min(window.innerWidth, window.innerHeight, maximumSize) - MOBILE_CANVAS_PADDING,
+  )
+}
 
 const isPreviewValid = (start: SnappedPoint, end: SnappedPoint, lines: Line[]) => {
   if (start.lineId === end.lineId) {
@@ -94,8 +107,17 @@ export function GameCanvas({
   onChoosePendingArea,
 }: GameCanvasProps) {
   const canvasRef = useRef<HTMLCanvasElement | null>(null)
+  const [canvasSize, setCanvasSize] = useState(() => getResponsiveCanvasSize(board.canvasSize))
   const [hoveredSnapPoint, setHoveredSnapPoint] = useState<SnappedPoint | null>(null)
   const [selectedSnapPoint, setSelectedSnapPoint] = useState<SnappedPoint | null>(null)
+  const renderBoard = useMemo(
+    () => ({
+      ...board,
+      canvasSize,
+      pixelsPerUnit: canvasSize / board.boardUnits,
+    }),
+    [board, canvasSize],
+  )
   const preview = useMemo(() => {
     if (!selectedSnapPoint || !hoveredSnapPoint) {
       return null
@@ -106,6 +128,21 @@ export function GameCanvas({
       isValid: isPreviewValid(selectedSnapPoint, hoveredSnapPoint, lines),
     }
   }, [hoveredSnapPoint, lines, selectedSnapPoint])
+
+  useEffect(() => {
+    const handleResize = () => {
+      setCanvasSize(getResponsiveCanvasSize(board.canvasSize))
+    }
+
+    handleResize()
+    window.addEventListener('resize', handleResize)
+    window.addEventListener('orientationchange', handleResize)
+
+    return () => {
+      window.removeEventListener('resize', handleResize)
+      window.removeEventListener('orientationchange', handleResize)
+    }
+  }, [board.canvasSize])
 
   useEffect(() => {
     const canvas = canvasRef.current
@@ -120,13 +157,13 @@ export function GameCanvas({
       return
     }
 
-    context.clearRect(0, 0, board.canvasSize, board.canvasSize)
+    context.clearRect(0, 0, renderBoard.canvasSize, renderBoard.canvasSize)
     context.fillStyle = '#ffffff'
-    context.fillRect(0, 0, board.canvasSize, board.canvasSize)
+    context.fillRect(0, 0, renderBoard.canvasSize, renderBoard.canvasSize)
 
     areas.forEach((area) => {
       const polygonPoints = getAreaPolygonPoints(area, lines).map((point) =>
-        toCanvasPoint(point, board),
+        toCanvasPoint(point, renderBoard),
       )
 
       if (polygonPoints.length < 3) {
@@ -145,8 +182,8 @@ export function GameCanvas({
 
     lines.forEach((line) => {
       context.beginPath()
-      context.moveTo(line.x1 * board.pixelsPerUnit, line.y1 * board.pixelsPerUnit)
-      context.lineTo(line.x2 * board.pixelsPerUnit, line.y2 * board.pixelsPerUnit)
+      context.moveTo(line.x1 * renderBoard.pixelsPerUnit, line.y1 * renderBoard.pixelsPerUnit)
+      context.lineTo(line.x2 * renderBoard.pixelsPerUnit, line.y2 * renderBoard.pixelsPerUnit)
       context.strokeStyle = lineColors[line.color]
       context.lineWidth = line.color === 'neutral' ? 4 : 3
       context.lineCap = 'round'
@@ -155,8 +192,14 @@ export function GameCanvas({
 
     if (preview) {
       context.beginPath()
-      context.moveTo(preview.line.x1 * board.pixelsPerUnit, preview.line.y1 * board.pixelsPerUnit)
-      context.lineTo(preview.line.x2 * board.pixelsPerUnit, preview.line.y2 * board.pixelsPerUnit)
+      context.moveTo(
+        preview.line.x1 * renderBoard.pixelsPerUnit,
+        preview.line.y1 * renderBoard.pixelsPerUnit,
+      )
+      context.lineTo(
+        preview.line.x2 * renderBoard.pixelsPerUnit,
+        preview.line.y2 * renderBoard.pixelsPerUnit,
+      )
       context.strokeStyle = preview.isValid ? lineColors[currentPlayer] : '#ef4444'
       context.lineWidth = 2
       context.setLineDash([8, 8])
@@ -165,7 +208,7 @@ export function GameCanvas({
     }
 
     if (hoveredSnapPoint) {
-      const canvasPoint = toCanvasPoint(hoveredSnapPoint.point, board)
+      const canvasPoint = toCanvasPoint(hoveredSnapPoint.point, renderBoard)
 
       context.beginPath()
       context.arc(canvasPoint.x, canvasPoint.y, 6, 0, Math.PI * 2)
@@ -177,7 +220,7 @@ export function GameCanvas({
     }
 
     if (selectedSnapPoint) {
-      const canvasPoint = toCanvasPoint(selectedSnapPoint.point, board)
+      const canvasPoint = toCanvasPoint(selectedSnapPoint.point, renderBoard)
 
       context.beginPath()
       context.arc(canvasPoint.x, canvasPoint.y, 7, 0, Math.PI * 2)
@@ -186,20 +229,20 @@ export function GameCanvas({
     }
   }, [
     areas,
-    board,
     currentPlayer,
     hoveredSnapPoint,
     lines,
     pendingAreaChoice?.areaIds,
     preview,
+    renderBoard,
     selectedSnapPoint,
   ])
 
-  const getBoardPointFromMouseEvent = (event: MouseEvent<HTMLCanvasElement>): Point => {
+  const getBoardPointFromPointerEvent = (event: PointerEvent<HTMLCanvasElement>): Point => {
     const canvas = event.currentTarget
     const bounds = canvas.getBoundingClientRect()
-    const x = ((event.clientX - bounds.left) / bounds.width) * board.boardUnits
-    const y = ((event.clientY - bounds.top) / bounds.height) * board.boardUnits
+    const x = ((event.clientX - bounds.left) / bounds.width) * renderBoard.boardUnits
+    const y = ((event.clientY - bounds.top) / bounds.height) * renderBoard.boardUnits
 
     return { x, y }
   }
@@ -228,20 +271,27 @@ export function GameCanvas({
     }
   }
 
-  const handleMouseMove = (event: MouseEvent<HTMLCanvasElement>) => {
+  const handlePointerMove = (event: PointerEvent<HTMLCanvasElement>) => {
+    event.preventDefault()
+
     if (pendingAreaChoice) {
       setHoveredSnapPoint(null)
       return
     }
 
-    const boardPoint = getBoardPointFromMouseEvent(event)
+    const boardPoint = getBoardPointFromPointerEvent(event)
     const closestSnapPoint = findClosestSnapPoint(boardPoint, selectedSnapPoint?.lineId)
 
     setHoveredSnapPoint(closestSnapPoint)
   }
 
-  const handleClick = (event: MouseEvent<HTMLCanvasElement>) => {
-    const boardPoint = getBoardPointFromMouseEvent(event)
+  const handlePointerDown = (event: PointerEvent<HTMLCanvasElement>) => {
+    event.preventDefault()
+    event.currentTarget.setPointerCapture(event.pointerId)
+
+    const boardPoint = getBoardPointFromPointerEvent(event)
+    const closestSnapPoint = findClosestSnapPoint(boardPoint, selectedSnapPoint?.lineId)
+    setHoveredSnapPoint(closestSnapPoint)
 
     if (pendingAreaChoice) {
       const chosenArea = areas.find(
@@ -257,42 +307,42 @@ export function GameCanvas({
       return
     }
 
-    if (!selectedSnapPoint && onFillArea(boardPoint)) {
-      setHoveredSnapPoint(null)
-      return
-    }
+    if (!closestSnapPoint) {
+      if (!selectedSnapPoint && onFillArea(boardPoint)) {
+        setHoveredSnapPoint(null)
+        return
+      }
 
-    if (!hoveredSnapPoint) {
       setSelectedSnapPoint(null)
       return
     }
 
     if (!selectedSnapPoint) {
-      setSelectedSnapPoint(hoveredSnapPoint)
+      setSelectedSnapPoint(closestSnapPoint)
       return
     }
 
-    if (preview?.isValid) {
-      onDrawLine(selectedSnapPoint, hoveredSnapPoint)
+    if (isPreviewValid(selectedSnapPoint, closestSnapPoint, lines)) {
+      onDrawLine(selectedSnapPoint, closestSnapPoint)
       setSelectedSnapPoint(null)
       setHoveredSnapPoint(null)
     }
   }
 
-  const handleMouseLeave = () => {
+  const handlePointerLeave = () => {
     setHoveredSnapPoint(null)
   }
 
   return (
     <canvas
       ref={canvasRef}
-      width={board.canvasSize}
-      height={board.canvasSize}
+      width={renderBoard.canvasSize}
+      height={renderBoard.canvasSize}
       className="game-canvas"
-      onMouseMove={handleMouseMove}
-      onClick={handleClick}
-      onMouseLeave={handleMouseLeave}
-      aria-label={`${board.boardUnits} by ${board.boardUnits} game board`}
+      onPointerMove={handlePointerMove}
+      onPointerDown={handlePointerDown}
+      onPointerLeave={handlePointerLeave}
+      aria-label={`${renderBoard.boardUnits} by ${renderBoard.boardUnits} game board`}
     />
   )
 }
