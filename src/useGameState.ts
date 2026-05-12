@@ -435,7 +435,7 @@ export interface UseGameStateOptions {
 
 export function useGameState(options: UseGameStateOptions = {}) {
   const gameId = options.gameId ?? defaultGameId
-  const storageAdapter = useMemo(
+  const storageAdapter = useMemo<StorageAdapter>(
     () => options.storageAdapter ?? (options.gameId ? supabaseAdapter : localStorageAdapter),
     [options.gameId, options.storageAdapter],
   )
@@ -476,7 +476,7 @@ export function useGameState(options: UseGameStateOptions = {}) {
     let isMounted = true
 
     Promise.resolve(
-      storageAdapter.subscribeToGameState(gameId, (nextState) => {
+      storageAdapter.subscribeToGameState(gameId, (nextState: GameState) => {
         suppressNextSaveRef.current = true
         setGameState(nextState)
       }),
