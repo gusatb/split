@@ -219,6 +219,21 @@
   cursor: help;
 }
 
+.game-canvas-wrap {
+  display: grid;
+  gap: 10px;
+  justify-items: center;
+  width: min(600px, 100%);
+}
+
+.line-confirm-bar {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+  justify-content: center;
+  width: 100%;
+}
+
 .victory-banner {
   position: fixed;
   inset: 12px 12px auto;

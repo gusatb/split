@@ -1,11 +1,12 @@
 import { useEffect, useMemo, useRef, useState } from 'react'
 import type { PointerEvent } from 'react'
 import {
-  GEOMETRY_EPSILON,
-  doLinesIntersect,
-  getDistance,
-  isPointOnLineSegment,
-} from './geometry'
+  canPreviewMove,
+  createPreviewLine,
+  isPreviewValid,
+} from './chordPreview'
+import { optimizeEvenSplitEndpoints } from './evenSplitChord'
+import { getDistance } from './geometry'
 import {
   buildLegalLineSegments,
   getClosestPointOnSegment,
@@ -51,7 +52,6 @@ interface GameCanvasProps {
   onInspectAreaChange: (area: AreaInspectionSnapshot | null) => void
 }
 
-const MIN_LINE_LENGTH = 0.1
 const MOBILE_CANVAS_PADDING = 24
 const MIN_CANVAS_SIZE = 160
 const BOARD_PADDING_UNITS = 0.75
@@ -59,16 +59,6 @@ const BOARD_PADDING_UNITS = 0.75
 const toCanvasPoint = (point: Point, board: RenderBoard): Point => ({
   x: (point.x + board.boardPaddingUnits) * board.pixelsPerUnit,
   y: (point.y + board.boardPaddingUnits) * board.pixelsPerUnit,
-})
-
-const createPreviewLine = (start: SnappedPoint, end: SnappedPoint): Line => ({
-  id: 'preview-line',
-  x1: start.point.x,
-  y1: start.point.y,
-  x2: end.point.x,
-  y2: end.point.y,
-  color: 'neutral',
-  choice: 0,
 })
 
 const getResponsiveCanvasSize = (maximumSize: number) => {
@@ -80,83 +70,6 @@ const getResponsiveCanvasSize = (maximumSize: number) => {
     Math.min(window.innerWidth, window.innerHeight, maximumSize) - MOBILE_CANVAS_PADDING
 
   return Math.max(MIN_CANVAS_SIZE, availableViewportSize)
-}
-
-const canLineIntersectionBeIgnored = (line: Line, previewLine: Line) => {
-  const previewStart = { x: previewLine.x1, y: previewLine.y1 }
-  const previewEnd = { x: previewLine.x2, y: previewLine.y2 }
-
-  return (
-    isPointOnLineSegment(previewStart, line) ||
-    isPointOnLineSegment(previewEnd, line)
-  )
-}
-
-const doLinesOverlap = (lineA: Line, lineB: Line) => {
-  const overlappingPoints = [
-    { x: lineA.x1, y: lineA.y1 },
-    { x: lineA.x2, y: lineA.y2 },
-    { x: lineB.x1, y: lineB.y1 },
-    { x: lineB.x2, y: lineB.y2 },
-  ].filter((point) => isPointOnLineSegment(point, lineA) && isPointOnLineSegment(point, lineB))
-
-  return overlappingPoints.some((point, index) =>
-    overlappingPoints
-      .slice(index + 1)
-      .some((otherPoint) => getDistance(point, otherPoint) > GEOMETRY_EPSILON),
-  )
-}
-
-const hasInvalidLineConflict = (previewLine: Line, start: SnappedPoint, end: SnappedPoint, lines: Line[]) =>
-  lines.some((line) => {
-    if (line.id === start.lineId || line.id === end.lineId) {
-      return doLinesOverlap(line, previewLine)
-    }
-
-    if (doLinesOverlap(line, previewLine)) {
-      return true
-    }
-
-    return doLinesIntersect(line, previewLine) && !canLineIntersectionBeIgnored(line, previewLine)
-  })
-
-const canPreviewMove = (
-  start: SnappedPoint,
-  end: SnappedPoint,
-  lines: Line[],
-  areas: Area[],
-) => {
-  if (start.lineId === end.lineId) {
-    return false
-  }
-
-  if (getDistance(start.point, end.point) < MIN_LINE_LENGTH) {
-    return false
-  }
-
-  const previewLine = createPreviewLine(start, end)
-
-  if (hasInvalidLineConflict(previewLine, start, end, lines)) {
-    return false
-  }
-
-  return getSplitMoveResult(areas, lines, previewLine) !== null
-}
-
-const isPreviewValid = (
-  start: SnappedPoint,
-  end: SnappedPoint,
-  lines: Line[],
-  areas: Area[],
-) => {
-  if (!canPreviewMove(start, end, lines, areas)) {
-    return false
-  }
-
-  const previewLine = createPreviewLine(start, end)
-  const splitMoveResult = getSplitMoveResult(areas, lines, previewLine)
-
-  return splitMoveResult !== null && isSplitMoveAllowed(splitMoveResult)
 }
 
 const getPolygonCentroid = (points: Point[]) => {
@@ -213,6 +126,10 @@ export function GameCanvas({
   const [canvasSize, setCanvasSize] = useState(() => getResponsiveCanvasSize(board.canvasSize))
   const [hoveredSnapPoint, setHoveredSnapPoint] = useState<SnappedPoint | null>(null)
   const [selectedSnapPoint, setSelectedSnapPoint] = useState<SnappedPoint | null>(null)
+  const [pendingChord, setPendingChord] = useState<{
+    start: SnappedPoint
+    end: SnappedPoint
+  } | null>(null)
   const [inspectionPoint, setInspectionPoint] = useState<Point | null>(null)
   const legalLineSegments = useMemo(() => buildLegalLineSegments(lines, areas), [areas, lines])
   const renderBoard: RenderBoard = useMemo(
@@ -225,6 +142,22 @@ export function GameCanvas({
     [board, canvasSize],
   )
   const preview = useMemo(() => {
+    if (pendingChord) {
+      const line = createPreviewLine(pendingChord.start, pendingChord.end)
+      const isValid = isPreviewValid(pendingChord.start, pendingChord.end, lines, areas)
+      let splitFragments: [Area, Area] | null = null
+
+      if (isValid) {
+        const splitMoveResult = getSplitMoveResult(areas, lines, line)
+
+        if (splitMoveResult && isSplitMoveAllowed(splitMoveResult)) {
+          splitFragments = splitMoveResult.splitResult.areas
+        }
+      }
+
+      return { line, isValid, splitFragments }
+    }
+
     if (!selectedSnapPoint || !hoveredSnapPoint) {
       return null
     }
@@ -242,7 +175,7 @@ export function GameCanvas({
     }
 
     return { line, isValid, splitFragments }
-  }, [areas, hoveredSnapPoint, lines, selectedSnapPoint])
+  }, [areas, hoveredSnapPoint, lines, pendingChord, selectedSnapPoint])
 
   useEffect(() => {
     const handleResize = () => {
@@ -258,6 +191,20 @@ export function GameCanvas({
       window.removeEventListener('orientationchange', handleResize)
     }
   }, [board.canvasSize])
+
+  useEffect(() => {
+    if (!interactionDisabled) {
+      return
+    }
+
+    const frameId = requestAnimationFrame(() => {
+      setPendingChord(null)
+      setHoveredSnapPoint(null)
+      setSelectedSnapPoint(null)
+    })
+
+    return () => cancelAnimationFrame(frameId)
+  }, [interactionDisabled])
 
   useEffect(() => {
     const canvas = canvasRef.current
@@ -535,9 +482,14 @@ export function GameCanvas({
     return { x, y }
   }
 
-  const resetPointerTurn = () => {
+  const clearChordPickInProgress = () => {
     setHoveredSnapPoint(null)
     setSelectedSnapPoint(null)
+  }
+
+  const resetPointerTurn = () => {
+    clearChordPickInProgress()
+    setPendingChord(null)
   }
 
   const updateInspectionIndicator = (point: Point | null) => {
@@ -620,6 +572,10 @@ export function GameCanvas({
       return
     }
 
+    if (pendingChord) {
+      return
+    }
+
     const closestSnapPoint = findClosestSnapPoint(
       boardPoint,
       selectedSnapPoint?.lineId,
@@ -651,6 +607,10 @@ export function GameCanvas({
       return
     }
 
+    if (pendingChord) {
+      return
+    }
+
     const closestSnapPoint = findClosestSnapPoint(
       boardPoint,
       selectedSnapPoint?.lineId,
@@ -675,6 +635,10 @@ export function GameCanvas({
     if (!isPointerInsideCanvas(event)) {
       if (inspectionMode) {
         updateInspectionIndicator(null)
+        return
+      }
+
+      if (pendingChord) {
         return
       }
 
@@ -708,6 +672,10 @@ export function GameCanvas({
       return
     }
 
+    if (pendingChord) {
+      return
+    }
+
     const closestSnapPoint = findClosestSnapPoint(
       boardPoint,
       selectedSnapPoint?.lineId,
@@ -731,13 +699,12 @@ export function GameCanvas({
     }
 
     if (isPreviewValid(selectedSnapPoint, closestSnapPoint, lines, areas)) {
-      onDrawLine(selectedSnapPoint, closestSnapPoint)
-      setSelectedSnapPoint(null)
-      setHoveredSnapPoint(null)
+      setPendingChord({ start: selectedSnapPoint, end: closestSnapPoint })
+      clearChordPickInProgress()
       return
     }
 
-    resetPointerTurn()
+    clearChordPickInProgress()
   }
 
   const handlePointerCancel = (event: PointerEvent<HTMLCanvasElement>) => {
@@ -749,6 +716,10 @@ export function GameCanvas({
 
     if (inspectionMode) {
       updateInspectionIndicator(null)
+      return
+    }
+
+    if (pendingChord) {
       return
     }
 
@@ -768,18 +739,74 @@ export function GameCanvas({
     setHoveredSnapPoint(null)
   }
 
+  const handleConfirmPendingLine = () => {
+    if (!pendingChord) {
+      return
+    }
+
+    if (!isPreviewValid(pendingChord.start, pendingChord.end, lines, areas)) {
+      return
+    }
+
+    onDrawLine(pendingChord.start, pendingChord.end)
+    setPendingChord(null)
+  }
+
+  const handleCancelPendingLine = () => {
+    setPendingChord(null)
+  }
+
+  const handleEvenSplitPendingLine = () => {
+    if (!pendingChord) {
+      return
+    }
+
+    const optimized = optimizeEvenSplitEndpoints(
+      pendingChord.start,
+      pendingChord.end,
+      lines,
+      areas,
+      legalLineSegments,
+    )
+
+    if (optimized) {
+      setPendingChord(optimized)
+    }
+  }
+
+  const showLineConfirmBar =
+    pendingChord !== null &&
+    !interactionDisabled &&
+    !inspectionMode &&
+    !pendingAreaChoice
+
   return (
-    <canvas
-      ref={canvasRef}
-      width={renderBoard.canvasSize}
-      height={renderBoard.canvasSize}
-      className={inspectionMode ? 'game-canvas inspecting' : 'game-canvas'}
-      onPointerMove={handlePointerMove}
-      onPointerDown={handlePointerDown}
-      onPointerUp={handlePointerUp}
-      onPointerCancel={handlePointerCancel}
-      onPointerLeave={handlePointerLeave}
-      aria-label={`${renderBoard.boardUnits} by ${renderBoard.boardUnits} game board`}
-    />
+    <div className="game-canvas-wrap">
+      <canvas
+        ref={canvasRef}
+        width={renderBoard.canvasSize}
+        height={renderBoard.canvasSize}
+        className={inspectionMode ? 'game-canvas inspecting' : 'game-canvas'}
+        onPointerMove={handlePointerMove}
+        onPointerDown={handlePointerDown}
+        onPointerUp={handlePointerUp}
+        onPointerCancel={handlePointerCancel}
+        onPointerLeave={handlePointerLeave}
+        aria-label={`${renderBoard.boardUnits} by ${renderBoard.boardUnits} game board`}
+      />
+      {showLineConfirmBar ? (
+        <div className="line-confirm-bar" role="group" aria-label="Confirm line placement">
+          <button type="button" className="game-button" onClick={handleConfirmPendingLine}>
+            Confirm
+          </button>
+          <button type="button" className="game-button" onClick={handleEvenSplitPendingLine}>
+            Even split
+          </button>
+          <button type="button" className="game-button secondary" onClick={handleCancelPendingLine}>
+            Cancel
+          </button>
+        </div>
+      ) : null}
+    </div>
   )
 }
