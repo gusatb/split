@@ -18,6 +18,8 @@ const DEFAULT_NODE_COUNT = 5
 const WINNING_SCORE = 50
 const MIN_LINE_LENGTH = 0.1
 
+const botScoreFromGeometricArea = (geometricArea: number) => Math.sqrt(geometricArea)
+
 interface BoundarySegment {
   id: string
   index: number
@@ -186,12 +188,12 @@ export const getNonScore = (area: Area, playerColor: PlayerColor, lines: Line[] 
     { same: 0, diff: 0 },
   )
 
-  return area.geometricArea * ((lineCounts.same + 1) / (lineCounts.diff + 1))
+  return botScoreFromGeometricArea(area.geometricArea) * ((lineCounts.same + 1) / (lineCounts.diff + 1))
 }
 
 export const getNowScore = (area: Area, playerColor: PlayerColor, lines: Line[] = []) =>
   area.geometricArea <= FILL_CAPTURE_LIMIT
-    ? area.geometricArea
+    ? botScoreFromGeometricArea(area.geometricArea)
     : getNonScore(area, playerColor, lines)
 
 export const chooseAreaForOpponent = (
@@ -301,32 +303,37 @@ export const evaluateCandidateMove = (
   botColor: PlayerColor,
 ): EvaluatedCandidateMove => {
   if (move.kind === 'fill') {
-    const score = move.area.geometricArea
+    const score = botScoreFromGeometricArea(move.area.geometricArea)
+    const gamePointsFromMove = move.area.geometricArea
 
     return {
       move,
       score,
-      isWinningMove: gameState.playerScores[botColor] + score > WINNING_SCORE,
+      isWinningMove: gameState.playerScores[botColor] + gamePointsFromMove > WINNING_SCORE,
     }
   }
 
   const [areaA, areaB] = getAreaPair(move.splitResult)
   const linesAfterMove = [...gameState.lines, move.line]
-  const score = move.isScoringMove
-    ? (() => {
-        const defenseChoice = chooseAreaForOpponent(areaA, areaB, botColor, linesAfterMove)
 
-        return (
-          defenseChoice.chosenForOpponent.geometricArea +
-          getNonScore(defenseChoice.remainingArea, botColor, linesAfterMove)
-        )
-      })()
-    : getNonScore(areaA, botColor, linesAfterMove) + getNonScore(areaB, botColor, linesAfterMove)
+  let score: number
+  let gamePointsFromMove = 0
+
+  if (move.isScoringMove) {
+    const defenseChoice = chooseAreaForOpponent(areaA, areaB, botColor, linesAfterMove)
+    gamePointsFromMove = defenseChoice.chosenForOpponent.geometricArea
+    score =
+      botScoreFromGeometricArea(defenseChoice.chosenForOpponent.geometricArea) +
+      getNonScore(defenseChoice.remainingArea, botColor, linesAfterMove)
+  } else {
+    score =
+      getNonScore(areaA, botColor, linesAfterMove) + getNonScore(areaB, botColor, linesAfterMove)
+  }
 
   return {
     move,
     score,
-    isWinningMove: gameState.playerScores[botColor] + score > WINNING_SCORE,
+    isWinningMove: gameState.playerScores[botColor] + gamePointsFromMove > WINNING_SCORE,
   }
 }
 
