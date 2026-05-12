@@ -17,6 +17,7 @@ import type { Area, Line, PlayerColor, Point } from './types'
 const DEFAULT_NODE_COUNT = 5
 const WINNING_SCORE = 50
 const MIN_LINE_LENGTH = 0.1
+const NON_SCORE_COEFFICIENT = 0.5
 
 const botScoreFromGeometricArea = (geometricArea: number) => Math.sqrt(geometricArea)
 
@@ -188,7 +189,11 @@ export const getNonScore = (area: Area, playerColor: PlayerColor, lines: Line[] 
     { same: 0, diff: 0 },
   )
 
-  return botScoreFromGeometricArea(area.geometricArea) * ((lineCounts.same + 1) / (lineCounts.diff + 1))
+  return (
+    NON_SCORE_COEFFICIENT *
+    botScoreFromGeometricArea(area.geometricArea) *
+    ((lineCounts.same + 1) / (lineCounts.diff + 1))
+  )
 }
 
 export const getNowScore = (area: Area, playerColor: PlayerColor, lines: Line[] = []) =>
