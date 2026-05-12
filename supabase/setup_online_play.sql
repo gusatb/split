@@ -1,3 +1,7 @@
+-- Direct setup fallback for online play.
+-- Run this in the Supabase SQL editor if the app reports PGRST205:
+-- "Could not find the table 'public.games' in the schema cache"
+
 create extension if not exists "pgcrypto";
 
 create table if not exists public.games (
@@ -18,8 +22,6 @@ begin
   return new;
 end;
 $$;
-
-notify pgrst, 'reload schema';
 
 drop trigger if exists set_games_updated_at on public.games;
 
@@ -47,3 +49,5 @@ exception
   when duplicate_object then null;
 end;
 $$;
+
+notify pgrst, 'reload schema';
