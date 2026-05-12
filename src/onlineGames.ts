@@ -1,5 +1,6 @@
 import { getSupabaseClient } from './lib/supabase'
 import { createInitialGameState, type GameState } from './useGameState'
+import type { PlayerColor } from './types'
 import type { GameRow, Json } from './types/supabase'
 
 const SHORT_CODE_ALPHABET = 'ABCDEFGHJKLMNPQRSTUVWXYZ23456789'
@@ -62,6 +63,7 @@ export interface OnlineGameSession {
   id: string
   shortCode: string
   initialState: GameState
+  localPlayer: PlayerColor
 }
 
 export const generateShortCode = () =>
@@ -69,14 +71,30 @@ export const generateShortCode = () =>
     SHORT_CODE_ALPHABET[Math.floor(Math.random() * SHORT_CODE_ALPHABET.length)],
   ).join('')
 
-const toGameSession = (row: GameRow): OnlineGameSession => ({
+const getNextPlayer = (player: PlayerColor): PlayerColor =>
+  player === 'player1' ? 'player2' : 'player1'
+
+const getRandomPlayer = (): PlayerColor => (Math.random() < 0.5 ? 'player1' : 'player2')
+
+const getStateFromRow = (row: GameRow) =>
+  (row.state as unknown as GameState | null) ?? createInitialGameState()
+
+const toGameSession = (row: GameRow, localPlayer: PlayerColor): OnlineGameSession => ({
   id: row.id,
   shortCode: row.short_code,
-  initialState: (row.state as unknown as GameState | null) ?? createInitialGameState(),
+  initialState: getStateFromRow(row),
+  localPlayer,
 })
 
 export const createOnlineGame = async () => {
-  const initialState = createInitialGameState()
+  const hostPlayer = getRandomPlayer()
+  const initialState: GameState = {
+    ...createInitialGameState(),
+    onlinePlayers: {
+      host: hostPlayer,
+      joiner: getNextPlayer(hostPlayer),
+    },
+  }
   let lastError: unknown = null
 
   for (let attempt = 0; attempt < MAX_CREATE_ATTEMPTS; attempt += 1) {
@@ -92,7 +110,7 @@ export const createOnlineGame = async () => {
       .single()
 
     if (!error && data) {
-      return toGameSession(data)
+      return toGameSession(data, hostPlayer)
     }
 
     lastError = error
@@ -130,11 +148,14 @@ export const joinOnlineGame = async (shortCode: string) => {
     throw new Error(`No game found for code ${normalizedCode}.`)
   }
 
+  const gameState = getStateFromRow(game)
+  const joinerPlayer = gameState.onlinePlayers?.joiner ?? 'player2'
+
   const { data: updatedGame, error: updateError } = await getSupabaseClient()
     .from('games')
     .update({
       status: 'playing',
-      state: (game.state ?? createInitialGameState()) as Json,
+      state: gameState as unknown as Json,
     })
     .eq('id', game.id)
     .select()
@@ -144,5 +165,5 @@ export const joinOnlineGame = async (shortCode: string) => {
     throw getOnlineGameError(updateError)
   }
 
-  return toGameSession(updatedGame)
+  return toGameSession(updatedGame, joinerPlayer)
 }

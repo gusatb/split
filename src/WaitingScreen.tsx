@@ -13,6 +13,7 @@ const toSession = (row: GameRow, fallback: OnlineGameSession): OnlineGameSession
   id: row.id,
   shortCode: row.short_code,
   initialState: (row.state as unknown as OnlineGameSession['initialState'] | null) ?? fallback.initialState,
+  localPlayer: fallback.localPlayer,
 })
 
 export function WaitingScreen({ session, onPlaying, onCancel }: WaitingScreenProps) {
@@ -52,6 +53,7 @@ export function WaitingScreen({ session, onPlaying, onCancel }: WaitingScreenPro
         <div className="room-code" aria-label={`Game code ${session.shortCode}`}>
           {session.shortCode}
         </div>
+        <p className="landing-copy">You are {session.localPlayer}.</p>
         <p className="landing-copy">The game starts automatically when they join.</p>
         <button type="button" className="game-button secondary" onClick={onCancel}>
           Back to menu

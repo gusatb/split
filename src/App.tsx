@@ -12,7 +12,7 @@ import { isSupabaseConfigured } from './lib/supabase'
 import { themes, type ThemeId } from './themes'
 import { getAreaPolygonPoints, useGameState } from './useGameState'
 import { WaitingScreen } from './WaitingScreen'
-import type { AreaInspectionSnapshot } from './types'
+import type { AreaInspectionSnapshot, PlayerColor } from './types'
 import './App.css'
 
 type View = 'home' | 'waiting' | 'game'
@@ -46,12 +46,16 @@ function GameView({ onlineSession, themeId, onThemeChange }: GameViewProps) {
   const [inspectionAreas, setInspectionAreas] = useState<AreaInspectionSnapshot[]>([])
   const [inspectedArea, setInspectedArea] = useState<AreaInspectionSnapshot | null>(null)
   const activeTheme = themes[themeId]
-  const canApplyPieRule = turnCount === 1 && !winner && !pendingAreaChoice
+  const localPlayer = onlineSession?.localPlayer ?? null
+  const isLocalTurn = !localPlayer || currentPlayer === localPlayer
+  const canApplyPieRule = isLocalTurn && turnCount === 1 && !winner && !pendingAreaChoice
   const turnLabel = winner
     ? `${winner} wins`
     : canApplyPieRule
       ? 'Player 2 color choice'
       : currentPlayer
+  const getPlayerLabel = (player: PlayerColor) =>
+    `${player === 'player1' ? 'Player 1' : 'Player 2'}${localPlayer === player ? ' (You)' : ''}`
   const prompt = (() => {
     if (isInspectingAreas) {
       return 'Inspection mode: move over the board to inspect the area under the indicator.'
@@ -62,18 +66,26 @@ function GameView({ onlineSession, themeId, onThemeChange }: GameViewProps) {
     }
 
     if (pendingAreaChoice) {
-      return `${pendingAreaChoice.choosingPlayer} must choose which highlighted sub-area scores for ${pendingAreaChoice.scoringPlayer}.`
+      if (!isLocalTurn) {
+        return 'Waiting for opponent.'
+      }
+
+      return `It's your turn: choose which highlighted sub-area scores for ${pendingAreaChoice.scoringPlayer}.`
+    }
+
+    if (!isLocalTurn) {
+      return 'Waiting for opponent.'
     }
 
     if (turnCount === 0) {
-      return 'Turn 1: Player 1 draws the first line between two existing edges.'
+      return "It's your turn: draw the first line between two existing edges."
     }
 
     if (canApplyPieRule) {
-      return 'Turn 2: Player 2 chooses which color to play as. Swap colors now, or keep Player 2 by drawing the next move.'
+      return "It's your turn: choose which color to play as. Swap colors now, or keep Player 2 by drawing the next move."
     }
 
-    return 'Draw a split between two legal snapped edge points, or tap a neutral area worth 5 or less to fill it.'
+    return "It's your turn: draw a split between two legal snapped edge points, or tap a neutral area worth 5 or less to fill it."
   })()
   const enterInspectionMode = () => {
     setInspectionAreas(
@@ -117,11 +129,11 @@ function GameView({ onlineSession, themeId, onThemeChange }: GameViewProps) {
             <strong>{turnLabel}</strong>
           </div>
           <div>
-            <span className="label">Player 1</span>
+            <span className="label">{getPlayerLabel('player1')}</span>
             <strong>{playerScores.player1.toFixed(1)}</strong>
           </div>
           <div>
-            <span className="label">Player 2</span>
+            <span className="label">{getPlayerLabel('player2')}</span>
             <strong>{playerScores.player2.toFixed(1)}</strong>
           </div>
           <label className="appearance-control">
@@ -174,6 +186,7 @@ function GameView({ onlineSession, themeId, onThemeChange }: GameViewProps) {
           inspectionMode={isInspectingAreas}
           inspectionAreas={inspectionAreas}
           inspectedAreaId={inspectedArea?.id ?? null}
+          interactionDisabled={!isLocalTurn}
           onDrawLine={actions.drawLine}
           onFillArea={actions.fillAreaAt}
           onChoosePendingArea={actions.choosePendingArea}
