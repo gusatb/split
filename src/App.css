@@ -2,8 +2,10 @@
   position: relative;
   display: flex;
   flex: 1;
-  align-items: flex-start;
-  justify-content: center;
+  flex-direction: column;
+  align-items: center;
+  justify-content: flex-start;
+  width: 100%;
   padding: 16px;
 }
 
@@ -95,6 +97,14 @@
 
 .game-header {
   max-width: 600px;
+  text-align: center;
+}
+
+.game-below-board {
+  display: grid;
+  gap: 12px;
+  justify-items: center;
+  width: min(600px, 100%);
 }
 
 .game-status {
