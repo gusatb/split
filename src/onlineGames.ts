@@ -6,6 +6,26 @@ const SHORT_CODE_ALPHABET = 'ABCDEFGHJKLMNPQRSTUVWXYZ23456789'
 const SHORT_CODE_LENGTH = 4
 const MAX_CREATE_ATTEMPTS = 6
 
+const getOnlineGameError = (error: unknown) => {
+  if (!(error instanceof Error)) {
+    return new Error('Unable to start online game.')
+  }
+
+  if (error.message.includes('relation') && error.message.includes('games')) {
+    return new Error(
+      'Online game table is missing. Supabase migrations have not been applied yet. Check the Supabase GitHub Integration migration run.',
+    )
+  }
+
+  if (error.message.includes('supabase_migrations.schema_migrations')) {
+    return new Error(
+      'Supabase migration history is missing. Run supabase/bootstrap_schema_migrations.sql once in the Supabase SQL editor, then re-run the GitHub Integration.',
+    )
+  }
+
+  return error
+}
+
 export interface OnlineGameSession {
   id: string
   shortCode: string
@@ -46,7 +66,7 @@ export const createOnlineGame = async () => {
     lastError = error
   }
 
-  throw lastError ?? new Error('Unable to create online game.')
+  throw getOnlineGameError(lastError ?? new Error('Unable to create online game.'))
 }
 
 export const joinOnlineGame = async (shortCode: string) => {
@@ -58,7 +78,7 @@ export const joinOnlineGame = async (shortCode: string) => {
     .maybeSingle()
 
   if (findError) {
-    throw findError
+    throw getOnlineGameError(findError)
   }
 
   if (!game) {
@@ -76,7 +96,7 @@ export const joinOnlineGame = async (shortCode: string) => {
     .single()
 
   if (updateError) {
-    throw updateError
+    throw getOnlineGameError(updateError)
   }
 
   return toGameSession(updatedGame)
