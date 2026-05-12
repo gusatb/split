@@ -44,8 +44,8 @@ export const themes: Record<ThemeId, ThemeConfig> = {
     neutralLine: '#404040',
     pendingFill: 'rgba(255, 255, 0, 0.16)',
     pendingStroke: '#FFFF00',
-    freeFill: 'rgba(0, 255, 128, 0.14)',
-    freeStroke: '#00FF80',
+    freeFill: 'rgba(255, 255, 0, 0)',
+    freeStroke: 'rgba(255, 255, 0, 0.62)',
     players: {
       player1: {
         stroke: '#00FFFF',
