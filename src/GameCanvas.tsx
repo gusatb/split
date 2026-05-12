@@ -292,11 +292,16 @@ export function GameCanvas({
 
       if (isFreeTakeArea) {
         resetCanvasEffects(context)
+        context.shadowColor = theme.freeAreaGlow.color
+        context.shadowBlur = theme.freeAreaGlow.blur
+        context.shadowOffsetX = 0
+        context.shadowOffsetY = 0
         context.fillStyle = theme.freeFill
         context.strokeStyle = theme.freeStroke
         context.lineWidth = 2
         context.fill()
         context.stroke()
+        resetCanvasEffects(context)
       }
 
       if (inspectionMode || isPendingChoice) {

@@ -7,6 +7,11 @@ export interface PlayerTheme {
   fill: string
 }
 
+export interface FreeAreaGlow {
+  color: string
+  blur: number
+}
+
 export interface ThemeConfig {
   id: ThemeId
   label: string
@@ -21,6 +26,8 @@ export interface ThemeConfig {
   pendingStroke: string
   freeFill: string
   freeStroke: string
+  /** Halo for neutral areas at or below the fill capture limit (visible without inspection). */
+  freeAreaGlow: FreeAreaGlow
   players: Record<PlayerColor, PlayerTheme>
   effects: {
     shadowBlur: number
@@ -44,8 +51,12 @@ export const themes: Record<ThemeId, ThemeConfig> = {
     neutralLine: '#404040',
     pendingFill: 'rgba(255, 255, 0, 0.16)',
     pendingStroke: '#FFFF00',
-    freeFill: 'rgba(255, 255, 0, 0)',
-    freeStroke: 'rgba(255, 255, 0, 0.62)',
+    freeFill: 'rgba(253, 224, 71, 0.1)',
+    freeStroke: 'rgba(250, 204, 21, 0.72)',
+    freeAreaGlow: {
+      color: 'rgba(253, 224, 71, 0.5)',
+      blur: 18,
+    },
     players: {
       player1: {
         stroke: '#00FFFF',
@@ -76,8 +87,12 @@ export const themes: Record<ThemeId, ThemeConfig> = {
     neutralLine: '#1A1A1A',
     pendingFill: 'rgba(192, 64, 0, 0.14)',
     pendingStroke: '#C04000',
-    freeFill: 'rgba(47, 79, 79, 0.14)',
-    freeStroke: '#2F4F4F',
+    freeFill: 'rgba(22, 163, 74, 0.12)',
+    freeStroke: 'rgba(14, 110, 58, 0.72)',
+    freeAreaGlow: {
+      color: 'rgba(52, 211, 153, 0.48)',
+      blur: 16,
+    },
     players: {
       player1: {
         stroke: '#C04000',
