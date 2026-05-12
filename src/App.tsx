@@ -1,7 +1,14 @@
 import { useEffect, useState } from 'react'
 import { GameCanvas } from './GameCanvas'
 import { LandingPage } from './LandingPage'
-import { createOnlineGame, joinOnlineGame, type OnlineGameSession } from './onlineGames'
+import {
+  checkOnlineGameSetup,
+  createOnlineGame,
+  getOnlineErrorMessage,
+  joinOnlineGame,
+  type OnlineGameSession,
+} from './onlineGames'
+import { isSupabaseConfigured } from './lib/supabase'
 import { themes, type ThemeId } from './themes'
 import { getAreaPolygonPoints, useGameState } from './useGameState'
 import { WaitingScreen } from './WaitingScreen'
@@ -188,6 +195,30 @@ function App() {
     document.documentElement.dataset.theme = themeId
   }, [themeId])
 
+  useEffect(() => {
+    if (!isSupabaseConfigured) {
+      return
+    }
+
+    let isMounted = true
+
+    checkOnlineGameSetup()
+      .then(() => {
+        if (isMounted) {
+          setOnlineError(null)
+        }
+      })
+      .catch((error: unknown) => {
+        if (isMounted) {
+          setOnlineError(getOnlineErrorMessage(error, 'Online play is not ready.'))
+        }
+      })
+
+    return () => {
+      isMounted = false
+    }
+  }, [])
+
   const startLocalPlay = () => {
     setOnlineSession(null)
     setOnlineError(null)
@@ -203,7 +234,8 @@ function App() {
       setOnlineSession(session)
       setView('waiting')
     } catch (error) {
-      setOnlineError(error instanceof Error ? error.message : 'Failed to start online game.')
+      console.error('Failed to start online game', error)
+      setOnlineError(getOnlineErrorMessage(error, 'Failed to start online game.'))
     } finally {
       setIsOnlineBusy(false)
     }
@@ -218,7 +250,8 @@ function App() {
       setOnlineSession(session)
       setView('game')
     } catch (error) {
-      setOnlineError(error instanceof Error ? error.message : 'Failed to join online game.')
+      console.error('Failed to join online game', error)
+      setOnlineError(getOnlineErrorMessage(error, 'Failed to join online game.'))
     } finally {
       setIsOnlineBusy(false)
     }
