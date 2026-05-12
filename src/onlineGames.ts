@@ -39,9 +39,13 @@ export const getOnlineErrorMessage = (error: unknown, fallback = 'Unable to star
 const getOnlineGameError = (error: unknown) => {
   const message = getOnlineErrorMessage(error)
 
-  if (message.includes('relation') && message.includes('games')) {
+  if (
+    (message.includes('relation') && message.includes('games')) ||
+    message.includes('PGRST205') ||
+    message.includes('schema cache')
+  ) {
     return new Error(
-      'Online game table is missing. Supabase migrations have not been applied yet. Check the Supabase GitHub Integration migration run.',
+      'Online game table is missing from Supabase/PostgREST. Run supabase/setup_online_play.sql once in the Supabase SQL editor, or ensure the GitHub Integration applied supabase/migrations/20260511120000_init_games.sql, then reload the schema cache.',
     )
   }
 
