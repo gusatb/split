@@ -1,4 +1,5 @@
-import { useEffect, useState } from 'react'
+import { useEffect, useMemo, useState } from 'react'
+import { getBestBotMove, getDefenseChoiceForPlayer } from './BotPlayer'
 import { GameCanvas } from './GameCanvas'
 import { LandingPage } from './LandingPage'
 import {
@@ -9,21 +10,43 @@ import {
   type OnlineGameSession,
 } from './onlineGames'
 import { isSupabaseConfigured } from './lib/supabase'
+import { localStorageAdapter } from './storage'
 import { themes, type ThemeId } from './themes'
-import { getAreaPolygonPoints, useGameState } from './useGameState'
+import { getAreaPolygonPoints, useGameState, type GameState } from './useGameState'
 import { WaitingScreen } from './WaitingScreen'
 import type { AreaInspectionSnapshot, PlayerColor } from './types'
 import './App.css'
 
 type View = 'home' | 'waiting' | 'game'
+type GameMode = 'local' | 'bot' | 'online'
+
+const BOT_PLAYER: PlayerColor = 'player2'
+const HUMAN_PLAYER: PlayerColor = 'player1'
+const BOT_GAME_ID = 'local-vs-bot'
 
 interface GameViewProps {
   onlineSession: OnlineGameSession | null
+  mode: GameMode
   themeId: ThemeId
   onThemeChange: (themeId: ThemeId) => void
 }
 
-function GameView({ onlineSession, themeId, onThemeChange }: GameViewProps) {
+const getAreaCentroid = (area: AreaInspectionSnapshot) => {
+  const pointTotal = area.polygon.reduce(
+    (total, point) => ({
+      x: total.x + point.x,
+      y: total.y + point.y,
+    }),
+    { x: 0, y: 0 },
+  )
+
+  return {
+    x: pointTotal.x / area.polygon.length,
+    y: pointTotal.y / area.polygon.length,
+  }
+}
+
+function GameView({ onlineSession, mode, themeId, onThemeChange }: GameViewProps) {
   const {
     actions,
     areas,
@@ -40,14 +63,33 @@ function GameView({ onlineSession, themeId, onThemeChange }: GameViewProps) {
           gameId: onlineSession.id,
           initialState: onlineSession.initialState,
         }
+      : mode === 'bot'
+        ? {
+            gameId: BOT_GAME_ID,
+            storageAdapter: localStorageAdapter,
+          }
       : undefined,
   )
   const [isInspectingAreas, setIsInspectingAreas] = useState(false)
   const [inspectionAreas, setInspectionAreas] = useState<AreaInspectionSnapshot[]>([])
   const [inspectedArea, setInspectedArea] = useState<AreaInspectionSnapshot | null>(null)
   const activeTheme = themes[themeId]
-  const localPlayer = onlineSession?.localPlayer ?? null
+  const localPlayer = onlineSession?.localPlayer ?? (mode === 'bot' ? HUMAN_PLAYER : null)
+  const botPlayer = mode === 'bot' ? BOT_PLAYER : null
   const isLocalTurn = !localPlayer || currentPlayer === localPlayer
+  const gameState = useMemo<GameState>(
+    () => ({
+      board,
+      lines,
+      areas,
+      currentPlayer,
+      turnCount,
+      playerScores,
+      winner,
+      pendingAreaChoice,
+    }),
+    [areas, board, currentPlayer, lines, pendingAreaChoice, playerScores, turnCount, winner],
+  )
   const canApplyPieRule = isLocalTurn && turnCount === 1 && !winner && !pendingAreaChoice
   const turnLabel = winner
     ? `${winner} wins`
@@ -108,6 +150,72 @@ function GameView({ onlineSession, themeId, onThemeChange }: GameViewProps) {
     exitInspectionMode()
     actions.resetGame()
   }
+
+  useEffect(() => {
+    if (!botPlayer || winner) {
+      return
+    }
+
+    if (pendingAreaChoice?.choosingPlayer === botPlayer) {
+      const [areaAId, areaBId] = pendingAreaChoice.areaIds
+      const areaA = areas.find((area) => area.id === areaAId)
+      const areaB = areas.find((area) => area.id === areaBId)
+
+      if (!areaA || !areaB) {
+        return
+      }
+
+      const timeoutId = window.setTimeout(() => {
+        const defenseChoice = getDefenseChoiceForPlayer(
+          areaA,
+          areaB,
+          pendingAreaChoice.scoringPlayer,
+          lines,
+        )
+
+        actions.choosePendingArea(defenseChoice.chosenForOpponent.id)
+      }, 500)
+
+      return () => window.clearTimeout(timeoutId)
+    }
+
+    if (currentPlayer !== botPlayer || pendingAreaChoice) {
+      return
+    }
+
+    const timeoutId = window.setTimeout(() => {
+      const evaluatedMove = getBestBotMove(gameState, botPlayer)
+
+      if (!evaluatedMove) {
+        return
+      }
+
+      if (evaluatedMove.move.kind === 'fill') {
+        actions.fillAreaAt(
+          getAreaCentroid({
+            id: evaluatedMove.move.area.id,
+            color: evaluatedMove.move.area.color,
+            geometricArea: evaluatedMove.move.area.geometricArea,
+            polygon: getAreaPolygonPoints(evaluatedMove.move.area, lines),
+          }),
+        )
+        return
+      }
+
+      actions.drawLine(
+        {
+          point: evaluatedMove.move.start.point,
+          lineId: evaluatedMove.move.start.lineId,
+        },
+        {
+          point: evaluatedMove.move.end.point,
+          lineId: evaluatedMove.move.end.lineId,
+        },
+      )
+    }, 650)
+
+    return () => window.clearTimeout(timeoutId)
+  }, [actions, areas, botPlayer, currentPlayer, gameState, lines, pendingAreaChoice, winner])
 
   return (
     <main className="app-shell">
@@ -199,6 +307,7 @@ function GameView({ onlineSession, themeId, onThemeChange }: GameViewProps) {
 
 function App() {
   const [view, setView] = useState<View>('home')
+  const [gameMode, setGameMode] = useState<GameMode>('local')
   const [onlineSession, setOnlineSession] = useState<OnlineGameSession | null>(null)
   const [themeId, setThemeId] = useState<ThemeId>('synth')
   const [isOnlineBusy, setIsOnlineBusy] = useState(false)
@@ -233,6 +342,14 @@ function App() {
   }, [])
 
   const startLocalPlay = () => {
+    setGameMode('local')
+    setOnlineSession(null)
+    setOnlineError(null)
+    setView('game')
+  }
+
+  const startBotPlay = () => {
+    setGameMode('bot')
     setOnlineSession(null)
     setOnlineError(null)
     setView('game')
@@ -244,6 +361,7 @@ function App() {
 
     try {
       const session = await createOnlineGame()
+      setGameMode('online')
       setOnlineSession(session)
       setView('waiting')
     } catch (error) {
@@ -260,6 +378,7 @@ function App() {
 
     try {
       const session = await joinOnlineGame(shortCode)
+      setGameMode('online')
       setOnlineSession(session)
       setView('game')
     } catch (error) {
@@ -291,6 +410,7 @@ function App() {
       <GameView
         key={onlineSession?.id ?? 'local'}
         onlineSession={onlineSession}
+        mode={gameMode}
         themeId={themeId}
         onThemeChange={setThemeId}
       />
@@ -300,6 +420,7 @@ function App() {
   return (
     <LandingPage
       onLocalPlay={startLocalPlay}
+      onPlayBot={startBotPlay}
       onStartOnlineGame={startOnlineGame}
       onJoinOnlineGame={joinOnlineGameByCode}
       isOnlineBusy={isOnlineBusy}
