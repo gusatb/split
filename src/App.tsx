@@ -231,58 +231,6 @@ function GameView({ onlineSession, mode, themeId, onThemeChange }: GameViewProps
           </p>
         </div>
 
-        <div className="game-status" aria-live="polite">
-          <div>
-            <span className="label">Turn</span>
-            <strong>{turnLabel}</strong>
-          </div>
-          <div>
-            <span className="label">{getPlayerLabel('player1')}</span>
-            <strong>{playerScores.player1.toFixed(1)}</strong>
-          </div>
-          <div>
-            <span className="label">{getPlayerLabel('player2')}</span>
-            <strong>{playerScores.player2.toFixed(1)}</strong>
-          </div>
-          <label className="appearance-control">
-            <span className="label">Appearance</span>
-            <select
-              value={themeId}
-              onChange={(event) => onThemeChange(event.target.value as ThemeId)}
-            >
-              <option value="synth">{themes.synth.label}</option>
-              <option value="tactile">{themes.tactile.label}</option>
-            </select>
-          </label>
-        </div>
-
-        <p className="prompt">{prompt}</p>
-
-        {isInspectingAreas ? (
-          <div className="inspection-readout" aria-live="polite">
-            <span className="label">Inspected area</span>
-            <strong>{inspectedArea ? inspectedArea.geometricArea.toFixed(2) : 'None'}</strong>
-          </div>
-        ) : null}
-
-        <div className="game-actions">
-          {canApplyPieRule ? (
-            <button type="button" className="game-button" onClick={actions.applyPieRule}>
-              Swap colors
-            </button>
-          ) : null}
-          <button
-            type="button"
-            className="game-button"
-            onClick={isInspectingAreas ? exitInspectionMode : enterInspectionMode}
-          >
-            {isInspectingAreas ? 'Exit inspection mode' : 'Inspect areas'}
-          </button>
-          <button type="button" className="game-button secondary" onClick={resetLocalGame}>
-            Reset local game
-          </button>
-        </div>
-
         <GameCanvas
           key={isInspectingAreas ? 'inspection-canvas' : 'game-canvas'}
           theme={activeTheme}
@@ -300,6 +248,60 @@ function GameView({ onlineSession, mode, themeId, onThemeChange }: GameViewProps
           onChoosePendingArea={actions.choosePendingArea}
           onInspectAreaChange={setInspectedArea}
         />
+
+        <div className="game-below-board">
+          <div className="game-status" aria-live="polite">
+            <div>
+              <span className="label">Turn</span>
+              <strong>{turnLabel}</strong>
+            </div>
+            <div>
+              <span className="label">{getPlayerLabel('player1')}</span>
+              <strong>{playerScores.player1.toFixed(1)}</strong>
+            </div>
+            <div>
+              <span className="label">{getPlayerLabel('player2')}</span>
+              <strong>{playerScores.player2.toFixed(1)}</strong>
+            </div>
+            <label className="appearance-control">
+              <span className="label">Appearance</span>
+              <select
+                value={themeId}
+                onChange={(event) => onThemeChange(event.target.value as ThemeId)}
+              >
+                <option value="synth">{themes.synth.label}</option>
+                <option value="tactile">{themes.tactile.label}</option>
+              </select>
+            </label>
+          </div>
+
+          <p className="prompt">{prompt}</p>
+
+          {isInspectingAreas ? (
+            <div className="inspection-readout" aria-live="polite">
+              <span className="label">Inspected area</span>
+              <strong>{inspectedArea ? inspectedArea.geometricArea.toFixed(2) : 'None'}</strong>
+            </div>
+          ) : null}
+
+          <div className="game-actions">
+            {canApplyPieRule ? (
+              <button type="button" className="game-button" onClick={actions.applyPieRule}>
+                Swap colors
+              </button>
+            ) : null}
+            <button
+              type="button"
+              className="game-button"
+              onClick={isInspectingAreas ? exitInspectionMode : enterInspectionMode}
+            >
+              {isInspectingAreas ? 'Exit inspection mode' : 'Inspect areas'}
+            </button>
+            <button type="button" className="game-button secondary" onClick={resetLocalGame}>
+              Reset local game
+            </button>
+          </div>
+        </div>
       </section>
     </main>
   )
