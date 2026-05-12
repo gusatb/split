@@ -170,29 +170,27 @@ const getAreaPair = (splitResult: SplitResult): [Area, Area] => [
 
 export const getNonScore = (area: Area, playerColor: PlayerColor, lines: Line[] = []) => {
   const boundarySegments = getAreaBoundarySegments(area, lines)
-  const lineCounts = boundarySegments.reduce(
-    (counts, segment) => {
-      const line = findLineById(lines, segment.lineId)
+  let myLines = 0
+  let allLines = 0
 
-      if (!line || line.color === 'neutral') {
-        return counts
-      }
+  for (const segment of boundarySegments) {
+    const line = findLineById(lines, segment.lineId)
+    if (!line) {
+      continue
+    }
 
-      if (line.color === playerColor) {
-        counts.same += 1
-      } else {
-        counts.diff += 1
-      }
+    allLines += 1
+    if (line.color === playerColor) {
+      myLines += 1
+    }
+  }
 
-      return counts
-    },
-    { same: 0, diff: 0 },
-  )
+  const boundaryControlRatio = allLines > 0 ? myLines / allLines : 0
 
   return (
     NON_SCORE_COEFFICIENT *
     botScoreFromGeometricArea(area.geometricArea) *
-    ((lineCounts.same + 1) / (lineCounts.diff + 1))
+    boundaryControlRatio
   )
 }
 
