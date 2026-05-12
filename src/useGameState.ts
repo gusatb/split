@@ -1,11 +1,16 @@
-import { useEffect, useState } from 'react'
+import { useEffect, useMemo, useRef, useState } from 'react'
 import {
   arePointsEqual,
   calculatePolygonArea,
   GEOMETRY_EPSILON,
   isPointOnLineSegment,
 } from './geometry'
-import { defaultGameId, localStorageAdapter, type StorageAdapter } from './storage'
+import {
+  defaultGameId,
+  localStorageAdapter,
+  supabaseAdapter,
+  type StorageAdapter,
+} from './storage'
 import type { Area, AreaColor, Line, PlayerColor, Point, PointReference } from './types'
 
 const BOARD_UNITS = 10
@@ -119,7 +124,7 @@ const createInitialAreas = (): Area[] => [
   },
 ]
 
-const createInitialGameState = (): GameState => {
+export const createInitialGameState = (): GameState => {
   const lines = createInitialLines()
 
   return {
@@ -422,16 +427,87 @@ const markAreaBoundaryFilled = (lines: Line[], areas: Area[]) => {
   })
 }
 
-export function useGameState(
-  storageAdapter: StorageAdapter = localStorageAdapter,
-  gameId = defaultGameId,
-) {
+export interface UseGameStateOptions {
+  gameId?: string
+  initialState?: GameState | null
+  storageAdapter?: StorageAdapter
+}
+
+export function useGameState(options: UseGameStateOptions = {}) {
+  const gameId = options.gameId ?? defaultGameId
+  const storageAdapter = useMemo(
+    () => options.storageAdapter ?? (options.gameId ? supabaseAdapter : localStorageAdapter),
+    [options.gameId, options.storageAdapter],
+  )
+  const suppressNextSaveRef = useRef(false)
   const [gameState, setGameState] = useState<GameState>(
-    () => storageAdapter.loadGameState(gameId) ?? createInitialGameState(),
+    () => options.initialState ?? createInitialGameState(),
   )
 
   useEffect(() => {
-    storageAdapter.saveGameState(gameState, gameId)
+    if (options.initialState) {
+      return
+    }
+
+    let isMounted = true
+
+    Promise.resolve(storageAdapter.loadGameState(gameId))
+      .then((storedState) => {
+        if (isMounted && storedState) {
+          suppressNextSaveRef.current = true
+          setGameState(storedState)
+        }
+      })
+      .catch((error: unknown) => {
+        console.error('Failed to load game state', error)
+      })
+
+    return () => {
+      isMounted = false
+    }
+  }, [gameId, options.initialState, storageAdapter])
+
+  useEffect(() => {
+    if (!storageAdapter.subscribeToGameState) {
+      return
+    }
+
+    let cleanup: (() => void) | undefined
+    let isMounted = true
+
+    Promise.resolve(
+      storageAdapter.subscribeToGameState(gameId, (nextState) => {
+        suppressNextSaveRef.current = true
+        setGameState(nextState)
+      }),
+    )
+      .then((unsubscribe) => {
+        if (isMounted) {
+          cleanup = unsubscribe
+          return
+        }
+
+        unsubscribe()
+      })
+      .catch((error: unknown) => {
+        console.error('Failed to subscribe to game state', error)
+      })
+
+    return () => {
+      isMounted = false
+      cleanup?.()
+    }
+  }, [gameId, storageAdapter])
+
+  useEffect(() => {
+    if (suppressNextSaveRef.current) {
+      suppressNextSaveRef.current = false
+      return
+    }
+
+    void Promise.resolve(storageAdapter.saveGameState(gameState, gameId)).catch((error: unknown) => {
+      console.error('Failed to save game state', error)
+    })
   }, [gameId, gameState, storageAdapter])
 
   const drawLine = (start: SnappedPoint, end: SnappedPoint) => {

@@ -1,11 +1,22 @@
 import { useEffect, useState } from 'react'
 import { GameCanvas } from './GameCanvas'
+import { LandingPage } from './LandingPage'
+import { createOnlineGame, joinOnlineGame, type OnlineGameSession } from './onlineGames'
 import { themes, type ThemeId } from './themes'
 import { getAreaPolygonPoints, useGameState } from './useGameState'
+import { WaitingScreen } from './WaitingScreen'
 import type { AreaInspectionSnapshot } from './types'
 import './App.css'
 
-function App() {
+type View = 'home' | 'waiting' | 'game'
+
+interface GameViewProps {
+  onlineSession: OnlineGameSession | null
+  themeId: ThemeId
+  onThemeChange: (themeId: ThemeId) => void
+}
+
+function GameView({ onlineSession, themeId, onThemeChange }: GameViewProps) {
   const {
     actions,
     areas,
@@ -16,11 +27,17 @@ function App() {
     playerScores,
     turnCount,
     winner,
-  } = useGameState()
+  } = useGameState(
+    onlineSession
+      ? {
+          gameId: onlineSession.id,
+          initialState: onlineSession.initialState,
+        }
+      : undefined,
+  )
   const [isInspectingAreas, setIsInspectingAreas] = useState(false)
   const [inspectionAreas, setInspectionAreas] = useState<AreaInspectionSnapshot[]>([])
   const [inspectedArea, setInspectedArea] = useState<AreaInspectionSnapshot | null>(null)
-  const [themeId, setThemeId] = useState<ThemeId>('synth')
   const activeTheme = themes[themeId]
   const canApplyPieRule = turnCount === 1 && !winner && !pendingAreaChoice
   const turnLabel = winner
@@ -73,10 +90,6 @@ function App() {
     actions.resetGame()
   }
 
-  useEffect(() => {
-    document.documentElement.dataset.theme = themeId
-  }, [themeId])
-
   return (
     <main className="app-shell">
       {winner ? <div className="victory-banner">{winner} wins!</div> : null}
@@ -108,7 +121,7 @@ function App() {
             <span className="label">Appearance</span>
             <select
               value={themeId}
-              onChange={(event) => setThemeId(event.target.value as ThemeId)}
+              onChange={(event) => onThemeChange(event.target.value as ThemeId)}
             >
               <option value="synth">{themes.synth.label}</option>
               <option value="tactile">{themes.tactile.label}</option>
@@ -161,6 +174,91 @@ function App() {
         />
       </section>
     </main>
+  )
+}
+
+function App() {
+  const [view, setView] = useState<View>('home')
+  const [onlineSession, setOnlineSession] = useState<OnlineGameSession | null>(null)
+  const [themeId, setThemeId] = useState<ThemeId>('synth')
+  const [isOnlineBusy, setIsOnlineBusy] = useState(false)
+  const [onlineError, setOnlineError] = useState<string | null>(null)
+
+  useEffect(() => {
+    document.documentElement.dataset.theme = themeId
+  }, [themeId])
+
+  const startLocalPlay = () => {
+    setOnlineSession(null)
+    setOnlineError(null)
+    setView('game')
+  }
+
+  const startOnlineGame = async () => {
+    setIsOnlineBusy(true)
+    setOnlineError(null)
+
+    try {
+      const session = await createOnlineGame()
+      setOnlineSession(session)
+      setView('waiting')
+    } catch (error) {
+      setOnlineError(error instanceof Error ? error.message : 'Failed to start online game.')
+    } finally {
+      setIsOnlineBusy(false)
+    }
+  }
+
+  const joinOnlineGameByCode = async (shortCode: string) => {
+    setIsOnlineBusy(true)
+    setOnlineError(null)
+
+    try {
+      const session = await joinOnlineGame(shortCode)
+      setOnlineSession(session)
+      setView('game')
+    } catch (error) {
+      setOnlineError(error instanceof Error ? error.message : 'Failed to join online game.')
+    } finally {
+      setIsOnlineBusy(false)
+    }
+  }
+
+  if (view === 'waiting' && onlineSession) {
+    return (
+      <WaitingScreen
+        session={onlineSession}
+        onPlaying={(session) => {
+          setOnlineSession(session)
+          setView('game')
+        }}
+        onCancel={() => {
+          setOnlineSession(null)
+          setView('home')
+        }}
+      />
+    )
+  }
+
+  if (view === 'game') {
+    return (
+      <GameView
+        key={onlineSession?.id ?? 'local'}
+        onlineSession={onlineSession}
+        themeId={themeId}
+        onThemeChange={setThemeId}
+      />
+    )
+  }
+
+  return (
+    <LandingPage
+      onLocalPlay={startLocalPlay}
+      onStartOnlineGame={startOnlineGame}
+      onJoinOnlineGame={joinOnlineGameByCode}
+      isOnlineBusy={isOnlineBusy}
+      onlineError={onlineError}
+    />
   )
 }
 
