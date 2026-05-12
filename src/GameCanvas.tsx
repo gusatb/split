@@ -44,6 +44,7 @@ interface GameCanvasProps {
   inspectionMode: boolean
   inspectionAreas: AreaInspectionSnapshot[]
   inspectedAreaId: string | null
+  interactionDisabled: boolean
   onDrawLine: (start: SnappedPoint, end: SnappedPoint) => void
   onFillArea: (point: Point) => boolean
   onChoosePendingArea: (areaId: string) => void
@@ -201,6 +202,7 @@ export function GameCanvas({
   inspectionMode,
   inspectionAreas,
   inspectedAreaId,
+  interactionDisabled,
   onDrawLine,
   onFillArea,
   onChoosePendingArea,
@@ -563,6 +565,11 @@ export function GameCanvas({
       return
     }
 
+    if (interactionDisabled) {
+      setHoveredSnapPoint(null)
+      return
+    }
+
     if (pendingAreaChoice) {
       setHoveredSnapPoint(null)
       return
@@ -591,6 +598,11 @@ export function GameCanvas({
 
     if (inspectionMode) {
       updateInspectionIndicator(boardPoint)
+      return
+    }
+
+    if (interactionDisabled) {
+      resetPointerTurn()
       return
     }
 
@@ -629,6 +641,11 @@ export function GameCanvas({
 
     if (inspectionMode) {
       updateInspectionIndicator(boardPoint)
+      return
+    }
+
+    if (interactionDisabled) {
+      resetPointerTurn()
       return
     }
 

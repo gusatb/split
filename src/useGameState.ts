@@ -73,6 +73,10 @@ export interface GameState {
   playerScores: Record<PlayerColor, number>
   winner: PlayerColor | null
   pendingAreaChoice: PendingAreaChoice | null
+  onlinePlayers?: {
+    host: PlayerColor
+    joiner: PlayerColor
+  }
 }
 
 export interface PendingAreaChoice {
