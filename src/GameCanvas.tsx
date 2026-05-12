@@ -229,10 +229,19 @@ export function GameCanvas({
       return null
     }
 
-    return {
-      line: createPreviewLine(selectedSnapPoint, hoveredSnapPoint),
-      isValid: isPreviewValid(selectedSnapPoint, hoveredSnapPoint, lines, areas),
+    const line = createPreviewLine(selectedSnapPoint, hoveredSnapPoint)
+    const isValid = isPreviewValid(selectedSnapPoint, hoveredSnapPoint, lines, areas)
+    let splitFragments: [Area, Area] | null = null
+
+    if (isValid) {
+      const splitMoveResult = getSplitMoveResult(areas, lines, line)
+
+      if (splitMoveResult && isSplitMoveAllowed(splitMoveResult)) {
+        splitFragments = splitMoveResult.splitResult.areas
+      }
     }
+
+    return { line, isValid, splitFragments }
   }, [areas, hoveredSnapPoint, lines, selectedSnapPoint])
 
   useEffect(() => {
@@ -387,6 +396,37 @@ export function GameCanvas({
       context.stroke()
       context.setLineDash([])
       resetCanvasEffects(context)
+    }
+
+    if (preview?.splitFragments) {
+      const linesWithPreview = [...lines, preview.line]
+
+      for (const fragment of preview.splitFragments) {
+        const fragmentPoly = getAreaPolygonPoints(fragment, linesWithPreview)
+
+        if (fragmentPoly.length < 3) {
+          continue
+        }
+
+        const labelPoint = toCanvasPoint(getPolygonCentroid(fragmentPoly), renderBoard)
+        const label = fragment.geometricArea.toFixed(1)
+
+        resetCanvasEffects(context)
+        context.textAlign = 'center'
+        context.textBaseline = 'middle'
+        context.font = '700 16px system-ui, sans-serif'
+        context.lineWidth = 4
+        context.lineJoin = 'round'
+        context.miterLimit = 2
+        context.strokeStyle = theme.background
+        context.fillStyle = theme.text
+        context.strokeText(label, labelPoint.x, labelPoint.y)
+        context.fillText(label, labelPoint.x, labelPoint.y)
+        resetCanvasEffects(context)
+      }
+
+      context.lineJoin = 'miter'
+      context.miterLimit = 10
     }
 
     if (hoveredSnapPoint) {
