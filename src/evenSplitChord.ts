@@ -6,7 +6,7 @@ import {
 } from './chordPreview'
 import { GEOMETRY_EPSILON, getDistance, isPointOnLineSegment } from './geometry'
 import { isLegalLineSegment } from './lineSegments'
-import { getSplitMoveResult, isSplitMoveAllowed, type SnappedPoint } from './useGameState'
+import { getSplitMoveResult, type SnappedPoint } from './useGameState'
 import type { Area, LegalLineSegment, Line, Point } from './types'
 
 const segmentAsLine = (segment: LegalLineSegment): Line => ({
@@ -36,52 +36,38 @@ const findLegalSegmentContainingPoint = (
   return null
 }
 
-const pointOnSegment = (segment: LegalLineSegment, t: number): Point => ({
-  x: segment.start.x + t * (segment.end.x - segment.start.x),
-  y: segment.start.y + t * (segment.end.y - segment.start.y),
-})
-
-const clamp01 = (value: number) => Math.min(1, Math.max(0, value))
-
-const projectPointToSegmentParameter = (segment: LegalLineSegment, point: Point) => {
-  const dx = segment.end.x - segment.start.x
-  const dy = segment.end.y - segment.start.y
-  const lengthSquared = dx * dx + dy * dy
-
-  if (lengthSquared <= GEOMETRY_EPSILON) {
-    return 0
-  }
-
-  return clamp01(((point.x - segment.start.x) * dx + (point.y - segment.start.y) * dy) / lengthSquared)
-}
-
-const GRID_STEPS = 37
-
-const evaluateSplitImbalance = (
-  start: SnappedPoint,
-  end: SnappedPoint,
+/**
+ * Area of the first polygon returned by the game's split geometry for chord pA–pB
+ * (same ordering as {@link getSplitMoveResult} / `splitResult.areas[0]`).
+ */
+const getSplitArea = (
+  pA: Point,
+  lineIdA: string,
+  pB: Point,
+  lineIdB: string,
   lines: Line[],
   areas: Area[],
 ): number | null => {
-  if (!isPreviewValid(start, end, lines, areas)) {
+  const snappedA: SnappedPoint = { point: pA, lineId: lineIdA }
+  const snappedB: SnappedPoint = { point: pB, lineId: lineIdB }
+
+  if (!canPreviewMove(snappedA, snappedB, lines, areas)) {
     return null
   }
 
-  const previewLine = createPreviewLine(start, end)
-  const splitMoveResult = getSplitMoveResult(areas, lines, previewLine)
+  const previewLine = createPreviewLine(snappedA, snappedB)
+  const result = getSplitMoveResult(areas, lines, previewLine)
 
-  if (!splitMoveResult || !isSplitMoveAllowed(splitMoveResult)) {
+  if (!result) {
     return null
   }
 
-  const [areaA, areaB] = splitMoveResult.splitResult.areas
-
-  return Math.abs(areaA.geometricArea - areaB.geometricArea)
+  return result.splitResult.areas[0].geometricArea
 }
 
 /**
- * Slide each endpoint along its original legal segment (same line ids) to
- * minimize |areaA − areaB| for the resulting split.
+ * Locks the first endpoint and slides only the second along its legal boundary segment
+ * so the first split fragment has area = half of the region being split (analytical).
  */
 export const optimizeEvenSplitEndpoints = (
   start: SnappedPoint,
@@ -90,94 +76,66 @@ export const optimizeEvenSplitEndpoints = (
   areas: Area[],
   legalSegments: LegalLineSegment[],
 ): { start: SnappedPoint; end: SnappedPoint } | null => {
-  const segStart = findLegalSegmentContainingPoint(legalSegments, start)
-  const segEnd = findLegalSegmentContainingPoint(legalSegments, end)
+  const L2 = findLegalSegmentContainingPoint(legalSegments, end)
 
-  if (!segStart || !segEnd) {
+  if (!L2) {
     return null
   }
 
-  const t0 = projectPointToSegmentParameter(segStart, start.point)
-  const u0 = projectPointToSegmentParameter(segEnd, end.point)
+  const baseline = createPreviewLine(start, end)
+  const moveResult = getSplitMoveResult(areas, lines, baseline)
 
-  let bestT = t0
-  let bestU = u0
-  const initialImbalance = evaluateSplitImbalance(
-    { point: pointOnSegment(segStart, t0), lineId: start.lineId },
-    { point: pointOnSegment(segEnd, u0), lineId: end.lineId },
-    lines,
-    areas,
-  )
-
-  if (initialImbalance === null) {
+  if (!moveResult) {
     return null
   }
 
-  let bestImbalance = initialImbalance
+  const totalArea = moveResult.areaToSplit.geometricArea
+  const targetArea = totalArea / 2
 
-  const tryCandidate = (t: number, u: number) => {
-    const candidateStart: SnappedPoint = {
-      point: pointOnSegment(segStart, t),
-      lineId: start.lineId,
-    }
-    const candidateEnd: SnappedPoint = {
-      point: pointOnSegment(segEnd, u),
-      lineId: end.lineId,
-    }
+  const A0 = getSplitArea(start.point, start.lineId, L2.start, end.lineId, lines, areas)
+  const A1 = getSplitArea(start.point, start.lineId, L2.end, end.lineId, lines, areas)
 
-    if (!canPreviewMove(candidateStart, candidateEnd, lines, areas)) {
-      return
-    }
-
-    const diff = evaluateSplitImbalance(candidateStart, candidateEnd, lines, areas)
-
-    if (diff !== null && diff < bestImbalance) {
-      bestImbalance = diff
-      bestT = t
-      bestU = u
-    }
-  }
-
-  const tDenom = Math.max(GRID_STEPS - 1, 1)
-
-  for (let i = 0; i < GRID_STEPS; i += 1) {
-    const t = i / tDenom
-
-    for (let j = 0; j < GRID_STEPS; j += 1) {
-      const u = j / tDenom
-      tryCandidate(t, u)
-    }
-  }
-
-  const window = 2 / tDenom
-  const REFINE_STEPS = 13
-
-  for (let pass = 0; pass < 2; pass += 1) {
-    for (let i = 0; i < REFINE_STEPS; i += 1) {
-      for (let j = 0; j < REFINE_STEPS; j += 1) {
-        const offsetT = ((i / (REFINE_STEPS - 1)) * 2 - 1) * (window / 2)
-        const offsetU = ((j / (REFINE_STEPS - 1)) * 2 - 1) * (window / 2)
-        tryCandidate(clamp01(bestT + offsetT), clamp01(bestU + offsetU))
-      }
-    }
-  }
-
-  const optimizedStart: SnappedPoint = {
-    point: pointOnSegment(segStart, bestT),
-    lineId: start.lineId,
-  }
-  const optimizedEnd: SnappedPoint = {
-    point: pointOnSegment(segEnd, bestU),
-    lineId: end.lineId,
-  }
-
-  if (getDistance(optimizedStart.point, optimizedEnd.point) < CHORD_PREVIEW_MIN_LENGTH) {
+  if (A0 === null || A1 === null) {
     return null
   }
 
-  if (!isPreviewValid(optimizedStart, optimizedEnd, lines, areas)) {
+  const denom = A1 - A0
+  const areaScale = Math.max(totalArea, 1)
+
+  if (Math.abs(denom) <= GEOMETRY_EPSILON * areaScale) {
     return null
   }
 
-  return { start: optimizedStart, end: optimizedEnd }
+  const low = Math.min(A0, A1)
+  const high = Math.max(A0, A1)
+  const boundTol = GEOMETRY_EPSILON * areaScale + 1e-12
+
+  if (targetArea < low - boundTol || targetArea > high + boundTol) {
+    return null
+  }
+
+  const t = (targetArea - A0) / denom
+
+  if (t < -1e-9 || t > 1 + 1e-9) {
+    return null
+  }
+
+  const tUse = Math.min(1, Math.max(0, t))
+
+  const p2New: Point = {
+    x: L2.start.x + tUse * (L2.end.x - L2.start.x),
+    y: L2.start.y + tUse * (L2.end.y - L2.start.y),
+  }
+
+  const newEnd: SnappedPoint = { point: p2New, lineId: end.lineId }
+
+  if (getDistance(start.point, p2New) < CHORD_PREVIEW_MIN_LENGTH) {
+    return null
+  }
+
+  if (!isPreviewValid(start, newEnd, lines, areas)) {
+    return null
+  }
+
+  return { start, end: newEnd }
 }
