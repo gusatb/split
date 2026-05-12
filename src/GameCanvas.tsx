@@ -106,7 +106,20 @@ const doLinesOverlap = (lineA: Line, lineB: Line) => {
   )
 }
 
-const isPreviewValid = (
+const hasInvalidLineConflict = (previewLine: Line, start: SnappedPoint, end: SnappedPoint, lines: Line[]) =>
+  lines.some((line) => {
+    if (line.id === start.lineId || line.id === end.lineId) {
+      return doLinesOverlap(line, previewLine)
+    }
+
+    if (doLinesOverlap(line, previewLine)) {
+      return true
+    }
+
+    return doLinesIntersect(line, previewLine) && !canLineIntersectionBeIgnored(line, previewLine)
+  })
+
+const canPreviewMove = (
   start: SnappedPoint,
   end: SnappedPoint,
   lines: Line[],
@@ -121,22 +134,25 @@ const isPreviewValid = (
   }
 
   const previewLine = createPreviewLine(start, end)
-  const hasInvalidIntersection = lines.some((line) => {
-    if (line.id === start.lineId || line.id === end.lineId) {
-      return doLinesOverlap(line, previewLine)
-    }
 
-    if (doLinesOverlap(line, previewLine)) {
-      return true
-    }
-
-    return doLinesIntersect(line, previewLine) && !canLineIntersectionBeIgnored(line, previewLine)
-  })
-
-  if (hasInvalidIntersection) {
+  if (hasInvalidLineConflict(previewLine, start, end, lines)) {
     return false
   }
 
+  return getSplitMoveResult(areas, lines, previewLine) !== null
+}
+
+const isPreviewValid = (
+  start: SnappedPoint,
+  end: SnappedPoint,
+  lines: Line[],
+  areas: Area[],
+) => {
+  if (!canPreviewMove(start, end, lines, areas)) {
+    return false
+  }
+
+  const previewLine = createPreviewLine(start, end)
   const splitMoveResult = getSplitMoveResult(areas, lines, previewLine)
 
   return splitMoveResult !== null && isSplitMoveAllowed(splitMoveResult)
@@ -344,7 +360,7 @@ export function GameCanvas({
     }
 
     if (preview) {
-      const stroke = preview.isValid ? getLineStroke(theme, currentPlayer) : '#EF4444'
+      const stroke = preview.isValid ? getLineStroke(theme, currentPlayer) : 'rgba(239, 68, 68, 0.72)'
       const previewStart = toCanvasPoint(
         { x: preview.line.x1, y: preview.line.y1 },
         renderBoard,
@@ -359,7 +375,7 @@ export function GameCanvas({
       context.lineTo(previewEnd.x, previewEnd.y)
       context.strokeStyle = stroke
       context.lineWidth = 2
-      context.setLineDash([8, 8])
+      context.setLineDash(preview.isValid ? [8, 8] : [2, 6])
       applyStrokeEffects(context, theme, stroke)
       context.stroke()
       context.setLineDash([])
@@ -515,7 +531,7 @@ export function GameCanvas({
       })
       .filter(
         (candidate) =>
-          !moveStart || isPreviewValid(moveStart, candidate, lines, areas),
+          !moveStart || canPreviewMove(moveStart, candidate, lines, areas),
       )
       .sort((firstPoint, secondPoint) => firstPoint.distance - secondPoint.distance)
     const closestSnap = snapCandidates[0]
@@ -656,7 +672,10 @@ export function GameCanvas({
       onDrawLine(selectedSnapPoint, closestSnapPoint)
       setSelectedSnapPoint(null)
       setHoveredSnapPoint(null)
+      return
     }
+
+    resetPointerTurn()
   }
 
   const handlePointerCancel = (event: PointerEvent<HTMLCanvasElement>) => {
