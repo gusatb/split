@@ -26,7 +26,7 @@ interface BoundarySegment {
   end: Point
 }
 
-interface CandidateNode {
+export interface CandidateNode {
   point: Point
   lineId: string
   segmentIndex: number

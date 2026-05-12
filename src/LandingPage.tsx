@@ -3,6 +3,7 @@ import { isSupabaseConfigured } from './lib/supabase'
 
 interface LandingPageProps {
   onLocalPlay: () => void
+  onPlayBot: () => void
   onStartOnlineGame: () => void
   onJoinOnlineGame: (shortCode: string) => void
   isOnlineBusy: boolean
@@ -11,6 +12,7 @@ interface LandingPageProps {
 
 export function LandingPage({
   onLocalPlay,
+  onPlayBot,
   onStartOnlineGame,
   onJoinOnlineGame,
   isOnlineBusy,
@@ -30,6 +32,9 @@ export function LandingPage({
         <div className="landing-actions">
           <button type="button" className="game-button primary" onClick={onLocalPlay}>
             Local Play
+          </button>
+          <button type="button" className="game-button" onClick={onPlayBot}>
+            Play vs Bot
           </button>
           <button
             type="button"
