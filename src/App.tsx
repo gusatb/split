@@ -24,6 +24,9 @@ const BOT_PLAYER: PlayerColor = 'player2'
 const HUMAN_PLAYER: PlayerColor = 'player1'
 const BOT_GAME_ID = 'local-vs-bot'
 
+const playerDisplayName = (player: PlayerColor) =>
+  player === 'player1' ? 'Player 1' : 'Player 2'
+
 interface GameViewProps {
   onlineSession: OnlineGameSession | null
   mode: GameMode
@@ -91,20 +94,20 @@ function GameView({ onlineSession, mode, themeId, onThemeChange }: GameViewProps
     [areas, board, currentPlayer, lines, pendingAreaChoice, playerScores, turnCount, winner],
   )
   const canApplyPieRule = isLocalTurn && turnCount === 1 && !winner && !pendingAreaChoice
-  const turnLabel = winner
-    ? `${winner} wins`
+  const turnAnnouncement = winner
+    ? `${playerDisplayName(winner)} won the game.`
     : canApplyPieRule
-      ? 'Player 2 color choice'
-      : currentPlayer
+      ? 'Player 2 chooses a color (pie rule).'
+      : `${playerDisplayName(currentPlayer)}'s turn.`
   const getPlayerLabel = (player: PlayerColor) =>
-    `${player === 'player1' ? 'Player 1' : 'Player 2'}${localPlayer === player ? ' (You)' : ''}`
+    `${playerDisplayName(player)}${localPlayer === player ? ' (You)' : ''}`
   const prompt = (() => {
     if (isInspectingAreas) {
       return 'Inspection mode: move over the board to inspect the area under the indicator.'
     }
 
     if (winner) {
-      return `${winner} surpassed 50 points. Start a new pass-and-play session to play again.`
+      return `${playerDisplayName(winner)} surpassed 50 points. Start a new pass-and-play session to play again.`
     }
 
     if (pendingAreaChoice) {
@@ -219,16 +222,14 @@ function GameView({ onlineSession, mode, themeId, onThemeChange }: GameViewProps
 
   return (
     <main className="app-shell">
-      {winner ? <div className="victory-banner">{winner} wins!</div> : null}
+      {winner ? (
+        <div className="victory-banner">{playerDisplayName(winner)} wins!</div>
+      ) : null}
 
       <section className="game-panel" aria-labelledby="game-title">
         <div className="game-header">
           <p className="eyebrow">Split</p>
           <h1 id="game-title">Game board</h1>
-          <p>
-            A {board.boardUnits}x{board.boardUnits} logic grid is mapped to a{' '}
-            {board.canvasSize}x{board.canvasSize} pixel canvas.
-          </p>
         </div>
 
         <GameCanvas
@@ -249,49 +250,48 @@ function GameView({ onlineSession, mode, themeId, onThemeChange }: GameViewProps
           onInspectAreaChange={setInspectedArea}
         />
 
+        <div className="player-scores-row" aria-live="polite" aria-atomic="true">
+          <span className="visually-hidden">{turnAnnouncement}</span>
+          <div
+            className={`player-score-box${!winner && currentPlayer === 'player1' ? ' player-score-box--active-turn' : ''}${winner === 'player1' ? ' player-score-box--winner' : ''}`}
+          >
+            <span className="label">{getPlayerLabel('player1')}</span>
+            <strong className="player-score-value">{playerScores.player1.toFixed(1)}</strong>
+          </div>
+          <div
+            className={`player-score-box${!winner && currentPlayer === 'player2' ? ' player-score-box--active-turn' : ''}${winner === 'player2' ? ' player-score-box--winner' : ''}`}
+          >
+            <span className="label">{getPlayerLabel('player2')}</span>
+            <strong className="player-score-value">{playerScores.player2.toFixed(1)}</strong>
+          </div>
+        </div>
+
         <div className="game-actions game-actions--under-board">
           {canApplyPieRule ? (
-            <button type="button" className="game-button" onClick={actions.applyPieRule}>
+            <button type="button" className="game-button secondary" onClick={actions.applyPieRule}>
               Swap colors
             </button>
           ) : null}
           <button
             type="button"
-            className="game-button"
+            className={isInspectingAreas ? 'game-button secondary' : 'game-button primary'}
             onClick={isInspectingAreas ? exitInspectionMode : enterInspectionMode}
           >
             {isInspectingAreas ? 'Exit inspection mode' : 'Inspect areas'}
           </button>
-          <button type="button" className="game-button secondary" onClick={resetLocalGame}>
-            Reset local game
-          </button>
         </div>
 
         <div className="game-below-board">
-          <div className="game-status" aria-live="polite">
-            <div>
-              <span className="label">Turn</span>
-              <strong>{turnLabel}</strong>
-            </div>
-            <div>
-              <span className="label">{getPlayerLabel('player1')}</span>
-              <strong>{playerScores.player1.toFixed(1)}</strong>
-            </div>
-            <div>
-              <span className="label">{getPlayerLabel('player2')}</span>
-              <strong>{playerScores.player2.toFixed(1)}</strong>
-            </div>
-            <label className="appearance-control">
-              <span className="label">Appearance</span>
-              <select
-                value={themeId}
-                onChange={(event) => onThemeChange(event.target.value as ThemeId)}
-              >
-                <option value="synth">{themes.synth.label}</option>
-                <option value="tactile">{themes.tactile.label}</option>
-              </select>
-            </label>
-          </div>
+          <label className="appearance-control">
+            <span className="label">Appearance</span>
+            <select
+              value={themeId}
+              onChange={(event) => onThemeChange(event.target.value as ThemeId)}
+            >
+              <option value="synth">{themes.synth.label}</option>
+              <option value="tactile">{themes.tactile.label}</option>
+            </select>
+          </label>
 
           <p className="prompt">{prompt}</p>
 
@@ -301,6 +301,12 @@ function GameView({ onlineSession, mode, themeId, onThemeChange }: GameViewProps
               <strong>{inspectedArea ? inspectedArea.geometricArea.toFixed(2) : 'None'}</strong>
             </div>
           ) : null}
+        </div>
+
+        <div className="game-footer-reset">
+          <button type="button" className="game-button game-button--ghost" onClick={resetLocalGame}>
+            Reset local game
+          </button>
         </div>
       </section>
     </main>
