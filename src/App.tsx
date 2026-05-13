@@ -249,6 +249,24 @@ function GameView({ onlineSession, mode, themeId, onThemeChange }: GameViewProps
           onInspectAreaChange={setInspectedArea}
         />
 
+        <div className="game-actions game-actions--under-board">
+          {canApplyPieRule ? (
+            <button type="button" className="game-button" onClick={actions.applyPieRule}>
+              Swap colors
+            </button>
+          ) : null}
+          <button
+            type="button"
+            className="game-button"
+            onClick={isInspectingAreas ? exitInspectionMode : enterInspectionMode}
+          >
+            {isInspectingAreas ? 'Exit inspection mode' : 'Inspect areas'}
+          </button>
+          <button type="button" className="game-button secondary" onClick={resetLocalGame}>
+            Reset local game
+          </button>
+        </div>
+
         <div className="game-below-board">
           <div className="game-status" aria-live="polite">
             <div>
@@ -283,24 +301,6 @@ function GameView({ onlineSession, mode, themeId, onThemeChange }: GameViewProps
               <strong>{inspectedArea ? inspectedArea.geometricArea.toFixed(2) : 'None'}</strong>
             </div>
           ) : null}
-
-          <div className="game-actions">
-            {canApplyPieRule ? (
-              <button type="button" className="game-button" onClick={actions.applyPieRule}>
-                Swap colors
-              </button>
-            ) : null}
-            <button
-              type="button"
-              className="game-button"
-              onClick={isInspectingAreas ? exitInspectionMode : enterInspectionMode}
-            >
-              {isInspectingAreas ? 'Exit inspection mode' : 'Inspect areas'}
-            </button>
-            <button type="button" className="game-button secondary" onClick={resetLocalGame}>
-              Reset local game
-            </button>
-          </div>
         </div>
       </section>
     </main>
