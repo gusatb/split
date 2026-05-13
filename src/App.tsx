@@ -115,7 +115,7 @@ function GameView({ onlineSession, mode, themeId, onThemeChange }: GameViewProps
         return 'Waiting for opponent.'
       }
 
-      return `It's your turn: choose which highlighted sub-area scores for ${pendingAreaChoice.scoringPlayer}.`
+      return `It's your turn: choose which highlighted sub-area scores for ${playerDisplayName(pendingAreaChoice.scoringPlayer)}.`
     }
 
     if (!isLocalTurn) {
@@ -249,6 +249,35 @@ function GameView({ onlineSession, mode, themeId, onThemeChange }: GameViewProps
           onChoosePendingArea={actions.choosePendingArea}
           onInspectAreaChange={setInspectedArea}
         />
+
+        {pendingAreaChoice && isLocalTurn ? (
+          <div
+            className="pending-area-choice-bar"
+            role="group"
+            aria-label="Choose which score to give your opponent"
+          >
+            {pendingAreaChoice.areaIds.map((areaId) => {
+              const area = areas.find((candidate) => candidate.id === areaId)
+
+              if (!area) {
+                return null
+              }
+
+              const scoreText = area.geometricArea.toFixed(1)
+
+              return (
+                <button
+                  key={areaId}
+                  type="button"
+                  className="game-button primary pending-area-choice-button"
+                  onClick={() => actions.choosePendingArea(areaId)}
+                >
+                  {`Give ${scoreText}`}
+                </button>
+              )
+            })}
+          </div>
+        ) : null}
 
         <div className="player-scores-row" aria-live="polite" aria-atomic="true">
           <span className="visually-hidden">{turnAnnouncement}</span>

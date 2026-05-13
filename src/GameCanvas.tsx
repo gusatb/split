@@ -56,6 +56,42 @@ const MOBILE_CANVAS_PADDING = 24
 const MIN_CANVAS_SIZE = 160
 const BOARD_PADDING_UNITS = 0.75
 
+type ChordPreviewModel = {
+  line: Line
+  isValid: boolean
+  splitFragments: [Area, Area] | null
+  isFillCapturePreview: boolean
+  fillCaptureParentArea: Area | null
+}
+
+const buildChordPreview = (
+  start: SnappedPoint,
+  end: SnappedPoint,
+  lines: Line[],
+  areas: Area[],
+): ChordPreviewModel => {
+  const line = createPreviewLine(start, end)
+  const isValid = isPreviewValid(start, end, lines, areas)
+  let splitFragments: [Area, Area] | null = null
+  let isFillCapturePreview = false
+  let fillCaptureParentArea: Area | null = null
+
+  if (isValid) {
+    const splitMoveResult = getSplitMoveResult(areas, lines, line)
+
+    if (splitMoveResult && isSplitMoveAllowed(splitMoveResult)) {
+      if (splitMoveResult.areaToSplit.geometricArea <= FILL_CAPTURE_LIMIT) {
+        isFillCapturePreview = true
+        fillCaptureParentArea = splitMoveResult.areaToSplit
+      } else {
+        splitFragments = splitMoveResult.splitResult.areas
+      }
+    }
+  }
+
+  return { line, isValid, splitFragments, isFillCapturePreview, fillCaptureParentArea }
+}
+
 const toCanvasPoint = (point: Point, board: RenderBoard): Point => ({
   x: (point.x + board.boardPaddingUnits) * board.pixelsPerUnit,
   y: (point.y + board.boardPaddingUnits) * board.pixelsPerUnit,
@@ -141,40 +177,16 @@ export function GameCanvas({
     }),
     [board, canvasSize],
   )
-  const preview = useMemo(() => {
+  const preview = useMemo((): ChordPreviewModel | null => {
     if (pendingChord) {
-      const line = createPreviewLine(pendingChord.start, pendingChord.end)
-      const isValid = isPreviewValid(pendingChord.start, pendingChord.end, lines, areas)
-      let splitFragments: [Area, Area] | null = null
-
-      if (isValid) {
-        const splitMoveResult = getSplitMoveResult(areas, lines, line)
-
-        if (splitMoveResult && isSplitMoveAllowed(splitMoveResult)) {
-          splitFragments = splitMoveResult.splitResult.areas
-        }
-      }
-
-      return { line, isValid, splitFragments }
+      return buildChordPreview(pendingChord.start, pendingChord.end, lines, areas)
     }
 
     if (!selectedSnapPoint || !hoveredSnapPoint) {
       return null
     }
 
-    const line = createPreviewLine(selectedSnapPoint, hoveredSnapPoint)
-    const isValid = isPreviewValid(selectedSnapPoint, hoveredSnapPoint, lines, areas)
-    let splitFragments: [Area, Area] | null = null
-
-    if (isValid) {
-      const splitMoveResult = getSplitMoveResult(areas, lines, line)
-
-      if (splitMoveResult && isSplitMoveAllowed(splitMoveResult)) {
-        splitFragments = splitMoveResult.splitResult.areas
-      }
-    }
-
-    return { line, isValid, splitFragments }
+    return buildChordPreview(selectedSnapPoint, hoveredSnapPoint, lines, areas)
   }, [areas, hoveredSnapPoint, lines, pendingChord, selectedSnapPoint])
 
   useEffect(() => {
@@ -322,7 +334,9 @@ export function GameCanvas({
       }
     }
 
-    if (preview) {
+    const hidePreviewLineForFillCapture = preview?.isValid && preview.isFillCapturePreview
+
+    if (preview && !hidePreviewLineForFillCapture) {
       const stroke = preview.isValid ? getLineStroke(theme, currentPlayer) : 'rgba(239, 68, 68, 0.72)'
       const previewStart = toCanvasPoint(
         { x: preview.line.x1, y: preview.line.y1 },
@@ -345,7 +359,30 @@ export function GameCanvas({
       resetCanvasEffects(context)
     }
 
-    if (preview?.splitFragments) {
+    if (preview?.isFillCapturePreview && preview.isValid && preview.fillCaptureParentArea) {
+      const parentPoly = getAreaPolygonPoints(preview.fillCaptureParentArea, lines)
+
+      if (parentPoly.length >= 3) {
+        const labelPoint = toCanvasPoint(getPolygonCentroid(parentPoly), renderBoard)
+        const scoreLabel = preview.fillCaptureParentArea.geometricArea.toFixed(1)
+
+        resetCanvasEffects(context)
+        context.textAlign = 'center'
+        context.textBaseline = 'middle'
+        context.font = '700 22px system-ui, sans-serif'
+        context.lineWidth = 4
+        context.lineJoin = 'round'
+        context.miterLimit = 2
+        context.strokeStyle = theme.background
+        context.fillStyle = theme.text
+        context.strokeText(scoreLabel, labelPoint.x, labelPoint.y)
+        context.fillText(scoreLabel, labelPoint.x, labelPoint.y)
+        resetCanvasEffects(context)
+      }
+
+      context.lineJoin = 'miter'
+      context.miterLimit = 10
+    } else if (preview?.splitFragments) {
       const linesWithPreview = [...lines, preview.line]
 
       for (const fragment of preview.splitFragments) {
@@ -799,9 +836,11 @@ export function GameCanvas({
           <button type="button" className="game-button" onClick={handleConfirmPendingLine}>
             Confirm
           </button>
-          <button type="button" className="game-button" onClick={handleEvenSplitPendingLine}>
-            Even split
-          </button>
+          {preview != null && preview.isValid && !preview.isFillCapturePreview ? (
+            <button type="button" className="game-button" onClick={handleEvenSplitPendingLine}>
+              Even split
+            </button>
+          ) : null}
           <button type="button" className="game-button secondary" onClick={handleCancelPendingLine}>
             Cancel
           </button>
