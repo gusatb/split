@@ -125,6 +125,23 @@
   border: 0;
 }
 
+.pending-area-choice-bar {
+  display: flex;
+  flex-direction: row;
+  flex-wrap: wrap;
+  gap: 10px;
+  justify-content: center;
+  width: min(600px, 100%);
+  box-sizing: border-box;
+}
+
+.pending-area-choice-button {
+  flex: 1 1 140px;
+  min-height: 48px;
+  font-weight: 700;
+  touch-action: manipulation;
+}
+
 .player-scores-row {
   display: flex;
   flex-direction: row;
@@ -374,6 +391,10 @@
   }
 
   .player-scores-row {
+    gap: 8px;
+  }
+
+  .pending-area-choice-bar {
     gap: 8px;
   }
 
