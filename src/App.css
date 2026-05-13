@@ -182,6 +182,11 @@
   justify-content: center;
 }
 
+.game-actions--under-board {
+  width: min(600px, 100%);
+  box-sizing: border-box;
+}
+
 .game-button {
   border: 1px solid var(--accent-border);
   border-radius: 999px;
@@ -242,6 +247,12 @@
   gap: 8px;
   justify-content: center;
   width: 100%;
+}
+
+.line-confirm-bar .game-button {
+  touch-action: manipulation;
+  min-height: 44px;
+  padding-block: 10px;
 }
 
 .victory-banner {
