@@ -2,6 +2,7 @@ import {
   chooseAreaForOpponent,
   evaluateCandidateMove,
   generateCandidateMoves,
+  getAreaBoundarySegments,
   getNonScore,
   getNowScore,
   type CandidateMove,
@@ -50,8 +51,10 @@ const addScoreSim = (
 
 const markAreaBoundaryFilledSim = (lines: Line[], areas: Area[]) => {
   const boundaryCounts = areas.reduce<Record<string, number>>((counts, capturedArea) => {
-    capturedArea.points.forEach((point) => {
-      counts[point.lineId] = (counts[point.lineId] ?? 0) + 1
+    const boundarySegments = getAreaBoundarySegments(capturedArea, lines)
+
+    boundarySegments.forEach((segment) => {
+      counts[segment.lineId] = (counts[segment.lineId] ?? 0) + 1
     })
 
     return counts
@@ -201,11 +204,15 @@ const sumNeutralSetupFor = (state: GameState, color: PlayerColor) =>
 const evaluateTerminal = (state: GameState, rootBotColor: PlayerColor): number => {
   const opponent = getNextPlayer(rootBotColor)
 
-  if (state.playerScores[rootBotColor] >= WINNING_SCORE) {
+  if (state.winner !== null) {
+    return state.winner === rootBotColor ? 1_000_000 : -1_000_000
+  }
+
+  if (state.playerScores[rootBotColor] > WINNING_SCORE) {
     return 1_000_000
   }
 
-  if (state.playerScores[opponent] >= WINNING_SCORE) {
+  if (state.playerScores[opponent] > WINNING_SCORE) {
     return -1_000_000
   }
 

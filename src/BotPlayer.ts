@@ -31,7 +31,7 @@ const pickSmallerAndLargerArea = (
     ? { smaller: areaA, larger: areaB }
     : { smaller: areaB, larger: areaA }
 
-interface BoundarySegment {
+export interface BoundarySegment {
   id: string
   index: number
   lineId: string
@@ -97,7 +97,7 @@ const findLineById = (lines: Line[], lineId: string) =>
 const getLineContainingSegment = (lines: Line[], start: Point, end: Point) =>
   lines.find((line) => isPointOnLineSegment(start, line) && isPointOnLineSegment(end, line))
 
-const getAreaBoundarySegments = (area: Area, lines: Line[]): BoundarySegment[] => {
+export const getAreaBoundarySegments = (area: Area, lines: Line[]): BoundarySegment[] => {
   const polygon = getAreaPolygonPoints(area, lines)
 
   return polygon.flatMap((point, index) => {
