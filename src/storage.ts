@@ -174,45 +174,46 @@ export const getLastLocalGameMode = (): LocalSavedGameMode | null => {
   return null
 }
 
-export const getContinueLocalGameMode = (): LocalSavedGameMode | null => {
+/** True if any local slot has a non-finished game (default or legacy bot keys). */
+export const hasInProgressLocalSave = () => {
   const localState = localStorageAdapter.loadGameState(DEFAULT_GAME_ID)
   const botV1State =
     localStorageAdapter.loadGameState(BOT_V1_GAME_ID) ??
     localStorageAdapter.loadGameState(LEGACY_BOT_GAME_ID)
   const botV2State = localStorageAdapter.loadGameState(BOT_V2_GAME_ID)
-  const localInProgress = isSavedGameInProgress(localState)
-  const botV1InProgress = isSavedGameInProgress(botV1State)
-  const botV2InProgress = isSavedGameInProgress(botV2State)
 
-  if (!localInProgress && !botV1InProgress && !botV2InProgress) {
-    return null
+  return (
+    isSavedGameInProgress(localState) ||
+    isSavedGameInProgress(botV1State) ||
+    isSavedGameInProgress(botV2State)
+  )
+}
+
+/**
+ * If the default slot is empty but a legacy bot slot has an in-progress game, copy it into the
+ * default slot so one `useGameState` path can load it.
+ */
+export const migrateInProgressSaveToDefaultSlot = () => {
+  if (!isBrowserStorageAvailable()) {
+    return
   }
 
-  const preference = getLastLocalGameMode()
+  const defaultState = localStorageAdapter.loadGameState(DEFAULT_GAME_ID)
 
-  if (preference === 'bot-v2' && botV2InProgress) {
-    return 'bot-v2'
+  if (isSavedGameInProgress(defaultState)) {
+    return
   }
 
-  if (preference === 'bot-v1' && botV1InProgress) {
-    return 'bot-v1'
-  }
+  const candidates = [
+    localStorageAdapter.loadGameState(BOT_V2_GAME_ID),
+    localStorageAdapter.loadGameState(BOT_V1_GAME_ID),
+    localStorageAdapter.loadGameState(LEGACY_BOT_GAME_ID),
+  ]
 
-  if (preference === 'local' && localInProgress) {
-    return 'local'
+  for (const candidate of candidates) {
+    if (candidate && isSavedGameInProgress(candidate)) {
+      localStorageAdapter.saveGameState(candidate, DEFAULT_GAME_ID)
+      return
+    }
   }
-
-  if (botV2InProgress) {
-    return 'bot-v2'
-  }
-
-  if (botV1InProgress) {
-    return 'bot-v1'
-  }
-
-  if (localInProgress) {
-    return 'local'
-  }
-
-  return null
 }
