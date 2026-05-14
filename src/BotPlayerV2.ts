@@ -11,7 +11,7 @@ import {
 import { FILL_CAPTURE_LIMIT, type GameState, type SplitResult } from './useGameState'
 import type { Area, Line, PlayerColor } from './types'
 
-export const N_DEPTH = 3
+export const N_DEPTH = 5
 export const N_BRANCHING_AREAS = 2
 export const N_BRANCHING_SPLITS = 3
 
