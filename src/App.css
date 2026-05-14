@@ -83,6 +83,41 @@
   color: var(--text);
 }
 
+.landing-local-intro {
+  margin: 0;
+  text-align: center;
+  font-size: 15px;
+  color: var(--text);
+}
+
+.landing-seat-grid {
+  display: grid;
+  gap: 14px;
+  width: 100%;
+}
+
+@media (min-width: 480px) {
+  .landing-seat-grid {
+    grid-template-columns: 1fr 1fr;
+  }
+}
+
+.landing-seat-field {
+  display: grid;
+  gap: 6px;
+}
+
+.landing-seat-field select {
+  width: 100%;
+  border: 1px solid var(--accent-border);
+  border-radius: 12px;
+  padding: 10px 12px;
+  color: var(--text-h);
+  background: var(--bg);
+  font-size: 16px;
+  font-weight: 600;
+}
+
 .landing-actions,
 .join-controls {
   display: flex;

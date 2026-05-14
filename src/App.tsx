@@ -12,14 +12,20 @@ import {
 } from './onlineGames'
 import { isSupabaseConfigured } from './lib/supabase'
 import {
-  BOT_V1_GAME_ID,
-  BOT_V2_GAME_ID,
-  LEGACY_BOT_GAME_ID,
   defaultGameId,
-  getContinueLocalGameMode,
+  hasInProgressLocalSave,
   localStorageAdapter,
+  migrateInProgressSaveToDefaultSlot,
   setLastLocalGameMode,
+  getLastLocalGameMode,
 } from './storage'
+import {
+  defaultLocalSeatConfig,
+  getSeatForPlayer,
+  loadLocalSeatConfig,
+  saveLocalSeatConfig,
+  type LocalSeatConfig,
+} from './localSeats'
 import { themes, type ThemeId } from './themes'
 import { getAreaPolygonPoints, useGameState, type GameState } from './useGameState'
 import { WaitingScreen } from './WaitingScreen'
@@ -27,10 +33,27 @@ import type { AreaInspectionSnapshot, PlayerColor } from './types'
 import './App.css'
 
 type View = 'home' | 'waiting' | 'game'
-type GameMode = 'local' | 'bot-v1' | 'bot-v2' | 'online'
+type GameMode = 'local' | 'online'
 
-const BOT_PLAYER: PlayerColor = 'player2'
-const HUMAN_PLAYER: PlayerColor = 'player1'
+const inferSeatConfigForContinue = (): LocalSeatConfig => {
+  const saved = loadLocalSeatConfig()
+
+  if (saved) {
+    return saved
+  }
+
+  const last = getLastLocalGameMode()
+
+  if (last === 'bot-v1') {
+    return { player1: 'human', player2: 'bot-v1' }
+  }
+
+  if (last === 'bot-v2') {
+    return { player1: 'human', player2: 'bot-v2' }
+  }
+
+  return defaultLocalSeatConfig()
+}
 
 const playerDisplayName = (player: PlayerColor) =>
   player === 'player1' ? 'Player 1' : 'Player 2'
@@ -38,6 +61,7 @@ const playerDisplayName = (player: PlayerColor) =>
 interface GameViewProps {
   onlineSession: OnlineGameSession | null
   mode: GameMode
+  localSeatConfig: LocalSeatConfig | null
   themeId: ThemeId
   onThemeChange: (themeId: ThemeId) => void
 }
@@ -57,7 +81,7 @@ const getAreaCentroid = (area: AreaInspectionSnapshot) => {
   }
 }
 
-function GameView({ onlineSession, mode, themeId, onThemeChange }: GameViewProps) {
+function GameView({ onlineSession, mode, localSeatConfig, themeId, onThemeChange }: GameViewProps) {
   const {
     actions,
     areas,
@@ -74,27 +98,22 @@ function GameView({ onlineSession, mode, themeId, onThemeChange }: GameViewProps
           gameId: onlineSession.id,
           initialState: onlineSession.initialState,
         }
-      : mode === 'bot-v1'
-        ? {
-            gameId: BOT_V1_GAME_ID,
-            storageAdapter: localStorageAdapter,
-          }
-        : mode === 'bot-v2'
-          ? {
-              gameId: BOT_V2_GAME_ID,
-              storageAdapter: localStorageAdapter,
-            }
-          : undefined,
+      : undefined,
   )
   const [isInspectingAreas, setIsInspectingAreas] = useState(false)
   const [inspectionAreas, setInspectionAreas] = useState<AreaInspectionSnapshot[]>([])
   const [inspectedArea, setInspectedArea] = useState<AreaInspectionSnapshot | null>(null)
   const activeTheme = themes[themeId]
-  const localPlayer =
-    onlineSession?.localPlayer ??
-    (mode === 'bot-v1' || mode === 'bot-v2' ? HUMAN_PLAYER : null)
-  const botPlayer = mode === 'bot-v1' || mode === 'bot-v2' ? BOT_PLAYER : null
-  const isLocalTurn = !localPlayer || currentPlayer === localPlayer
+  const localPlayer = onlineSession?.localPlayer ?? null
+
+  const canInteractWithBoard =
+    mode === 'online' && onlineSession
+      ? !onlineSession.localPlayer || currentPlayer === onlineSession.localPlayer
+      : mode === 'local' && localSeatConfig
+        ? pendingAreaChoice
+          ? getSeatForPlayer(localSeatConfig, pendingAreaChoice.choosingPlayer) === 'human'
+          : getSeatForPlayer(localSeatConfig, currentPlayer) === 'human'
+        : true
   const gameState = useMemo<GameState>(
     () => ({
       board,
@@ -108,32 +127,77 @@ function GameView({ onlineSession, mode, themeId, onThemeChange }: GameViewProps
     }),
     [areas, board, currentPlayer, lines, pendingAreaChoice, playerScores, turnCount, winner],
   )
-  const canApplyPieRule = isLocalTurn && turnCount === 1 && !winner && !pendingAreaChoice
+  const canApplyPieRule = canInteractWithBoard && turnCount === 1 && !winner && !pendingAreaChoice
   const turnAnnouncement = winner
     ? `${playerDisplayName(winner)} won the game.`
     : canApplyPieRule
       ? 'Player 2 chooses a color (pie rule).'
-      : `${playerDisplayName(currentPlayer)}'s turn.`
+      : mode === 'local' && localSeatConfig
+        ? (() => {
+            const seat = getSeatForPlayer(localSeatConfig, currentPlayer)
+
+            if (seat === 'human') {
+              return `${playerDisplayName(currentPlayer)}'s turn.`
+            }
+
+            return `${seat === 'bot-v1' ? 'Bot V1' : 'Bot V2'} (${playerDisplayName(currentPlayer)}) is playing.`
+          })()
+        : `${playerDisplayName(currentPlayer)}'s turn.`
+  const seatSuffix = (player: PlayerColor) => {
+    if (mode !== 'local' || !localSeatConfig) {
+      return ''
+    }
+
+    const k = getSeatForPlayer(localSeatConfig, player)
+
+    if (k === 'bot-v1') {
+      return ' (Bot V1)'
+    }
+
+    if (k === 'bot-v2') {
+      return ' (Bot V2)'
+    }
+
+    return ''
+  }
   const getPlayerLabel = (player: PlayerColor) =>
-    `${playerDisplayName(player)}${localPlayer === player ? ' (You)' : ''}`
+    `${playerDisplayName(player)}${localPlayer === player ? ' (You)' : ''}${seatSuffix(player)}`
   const prompt = (() => {
     if (isInspectingAreas) {
       return 'Inspection mode: move over the board to inspect the area under the indicator.'
     }
 
     if (winner) {
-      return `${playerDisplayName(winner)} surpassed 50 points. Start a new pass-and-play session to play again.`
+      return `${playerDisplayName(winner)} surpassed 50 points. Return home to start a new local game.`
     }
 
     if (pendingAreaChoice) {
-      if (!isLocalTurn) {
+      if (!canInteractWithBoard) {
+        const chooser = pendingAreaChoice.choosingPlayer
+
+        if (mode === 'local' && localSeatConfig) {
+          const seat = getSeatForPlayer(localSeatConfig, chooser)
+
+          if (seat !== 'human') {
+            return `${seat === 'bot-v1' ? 'Bot V1' : 'Bot V2'} is choosing which score to give.`
+          }
+        }
+
         return 'Waiting for opponent.'
       }
 
       return `It's your turn: choose which highlighted sub-area scores for ${playerDisplayName(pendingAreaChoice.scoringPlayer)}.`
     }
 
-    if (!isLocalTurn) {
+    if (!canInteractWithBoard) {
+      if (mode === 'local' && localSeatConfig) {
+        const seat = getSeatForPlayer(localSeatConfig, currentPlayer)
+
+        if (seat !== 'human') {
+          return `${seat === 'bot-v1' ? 'Bot V1' : 'Bot V2'} is thinking…`
+        }
+      }
+
       return 'Waiting for opponent.'
     }
 
@@ -170,11 +234,18 @@ function GameView({ onlineSession, mode, themeId, onThemeChange }: GameViewProps
   }
 
   useEffect(() => {
-    if (!botPlayer || winner) {
+    if (winner || mode === 'online' || !localSeatConfig) {
       return
     }
 
-    if (pendingAreaChoice?.choosingPlayer === botPlayer) {
+    if (pendingAreaChoice) {
+      const chooser = pendingAreaChoice.choosingPlayer
+      const chooserSeat = getSeatForPlayer(localSeatConfig, chooser)
+
+      if (chooserSeat === 'human') {
+        return
+      }
+
       const [areaAId, areaBId] = pendingAreaChoice.areaIds
       const areaA = areas.find((area) => area.id === areaAId)
       const areaB = areas.find((area) => area.id === areaBId)
@@ -197,15 +268,17 @@ function GameView({ onlineSession, mode, themeId, onThemeChange }: GameViewProps
       return () => window.clearTimeout(timeoutId)
     }
 
-    if (currentPlayer !== botPlayer || pendingAreaChoice) {
+    const moverSeat = getSeatForPlayer(localSeatConfig, currentPlayer)
+
+    if (moverSeat === 'human') {
       return
     }
 
     const timeoutId = window.setTimeout(() => {
       const evaluatedMove =
-        mode === 'bot-v2'
-          ? getBestBotV2Move(gameState, botPlayer)
-          : getBestBotMove(gameState, botPlayer)
+        moverSeat === 'bot-v2'
+          ? getBestBotV2Move(gameState, currentPlayer)
+          : getBestBotMove(gameState, currentPlayer)
 
       if (!evaluatedMove) {
         return
@@ -236,7 +309,17 @@ function GameView({ onlineSession, mode, themeId, onThemeChange }: GameViewProps
     }, 650)
 
     return () => window.clearTimeout(timeoutId)
-  }, [actions, areas, botPlayer, currentPlayer, gameState, lines, mode, pendingAreaChoice, winner])
+  }, [
+    actions,
+    areas,
+    currentPlayer,
+    gameState,
+    lines,
+    localSeatConfig,
+    mode,
+    pendingAreaChoice,
+    winner,
+  ])
 
   return (
     <main className="app-shell">
@@ -261,14 +344,14 @@ function GameView({ onlineSession, mode, themeId, onThemeChange }: GameViewProps
           inspectionMode={isInspectingAreas}
           inspectionAreas={inspectionAreas}
           inspectedAreaId={inspectedArea?.id ?? null}
-          interactionDisabled={!isLocalTurn}
+          interactionDisabled={!canInteractWithBoard}
           onDrawLine={actions.drawLine}
           onFillArea={actions.fillAreaAt}
           onChoosePendingArea={actions.choosePendingArea}
           onInspectAreaChange={setInspectedArea}
         />
 
-        {pendingAreaChoice && isLocalTurn ? (
+        {pendingAreaChoice && canInteractWithBoard ? (
           <div
             className="pending-area-choice-bar"
             role="group"
@@ -364,6 +447,7 @@ function App() {
   const [view, setView] = useState<View>('home')
   const [gameMode, setGameMode] = useState<GameMode>('local')
   const [onlineSession, setOnlineSession] = useState<OnlineGameSession | null>(null)
+  const [localSeatConfig, setLocalSeatConfig] = useState<LocalSeatConfig>(() => defaultLocalSeatConfig())
   const [themeId, setThemeId] = useState<ThemeId>('synth')
   const [isOnlineBusy, setIsOnlineBusy] = useState(false)
   const [onlineError, setOnlineError] = useState<string | null>(null)
@@ -396,27 +480,20 @@ function App() {
     }
   }, [])
 
-  const resumeMode = useMemo(
-    () => (view === 'home' ? getContinueLocalGameMode() : null),
+  const resumeAvailable = useMemo(
+    () => (view === 'home' ? hasInProgressLocalSave() : false),
     [view],
   )
 
   const continueGame = () => {
-    const mode = getContinueLocalGameMode()
-
-    if (!mode) {
+    if (!hasInProgressLocalSave()) {
       return
     }
 
-    setLastLocalGameMode(mode)
-    setGameMode(mode)
-    setOnlineSession(null)
-    setOnlineError(null)
-    setView('game')
-  }
-
-  const startNewPassAndPlay = () => {
-    localStorageAdapter.clearGameState(defaultGameId)
+    migrateInProgressSaveToDefaultSlot()
+    const seats = inferSeatConfigForContinue()
+    saveLocalSeatConfig(seats)
+    setLocalSeatConfig(seats)
     setLastLocalGameMode('local')
     setGameMode('local')
     setOnlineSession(null)
@@ -424,20 +501,12 @@ function App() {
     setView('game')
   }
 
-  const startNewBotV1Game = () => {
-    localStorageAdapter.clearGameState(BOT_V1_GAME_ID)
-    localStorageAdapter.clearGameState(LEGACY_BOT_GAME_ID)
-    setLastLocalGameMode('bot-v1')
-    setGameMode('bot-v1')
-    setOnlineSession(null)
-    setOnlineError(null)
-    setView('game')
-  }
-
-  const startNewBotV2Game = () => {
-    localStorageAdapter.clearGameState(BOT_V2_GAME_ID)
-    setLastLocalGameMode('bot-v2')
-    setGameMode('bot-v2')
+  const startLocalGame = (config: LocalSeatConfig) => {
+    localStorageAdapter.clearGameState(defaultGameId)
+    saveLocalSeatConfig(config)
+    setLocalSeatConfig(config)
+    setLastLocalGameMode('local')
+    setGameMode('local')
     setOnlineSession(null)
     setOnlineError(null)
     setView('game')
@@ -496,9 +565,10 @@ function App() {
   if (view === 'game') {
     return (
       <GameView
-        key={onlineSession?.id ?? gameMode}
+        key={onlineSession?.id ?? 'local'}
         onlineSession={onlineSession}
         mode={gameMode}
+        localSeatConfig={gameMode === 'local' ? localSeatConfig : null}
         themeId={themeId}
         onThemeChange={setThemeId}
       />
@@ -507,11 +577,9 @@ function App() {
 
   return (
     <LandingPage
-      resumeMode={resumeMode}
+      resumeAvailable={resumeAvailable}
       onContinueGame={continueGame}
-      onNewPassAndPlay={startNewPassAndPlay}
-      onNewBotV1Game={startNewBotV1Game}
-      onNewBotV2Game={startNewBotV2Game}
+      onStartLocalGame={startLocalGame}
       onStartOnlineGame={startOnlineGame}
       onJoinOnlineGame={joinOnlineGameByCode}
       isOnlineBusy={isOnlineBusy}
