@@ -17,14 +17,6 @@ export const N_BRANCHING_SPLITS = 3
 
 const WINNING_SCORE = 50
 
-let simLineCounter = 0
-
-const nextSimLineId = () => {
-  simLineCounter += 1
-
-  return `sim-line-${simLineCounter}`
-}
-
 export const getNextPlayer = (activeColor: PlayerColor): PlayerColor =>
   activeColor === 'player1' ? 'player2' : 'player1'
 
@@ -143,7 +135,6 @@ export const makeMove = (
 
   const simLine: Line = {
     ...move.line,
-    id: nextSimLineId(),
     color: activeColor,
   }
   const nextLines = [...base.lines, simLine]
