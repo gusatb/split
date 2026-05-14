@@ -1,5 +1,6 @@
 import { useEffect, useMemo, useState } from 'react'
 import { getBestBotMove, getDefenseChoiceForPlayer } from './BotPlayer'
+import { getBestBotV2Move } from './BotPlayerV2'
 import { GameCanvas } from './GameCanvas'
 import { LandingPage } from './LandingPage'
 import {
@@ -11,7 +12,9 @@ import {
 } from './onlineGames'
 import { isSupabaseConfigured } from './lib/supabase'
 import {
-  BOT_GAME_ID,
+  BOT_V1_GAME_ID,
+  BOT_V2_GAME_ID,
+  LEGACY_BOT_GAME_ID,
   defaultGameId,
   getContinueLocalGameMode,
   localStorageAdapter,
@@ -24,7 +27,7 @@ import type { AreaInspectionSnapshot, PlayerColor } from './types'
 import './App.css'
 
 type View = 'home' | 'waiting' | 'game'
-type GameMode = 'local' | 'bot' | 'online'
+type GameMode = 'local' | 'bot-v1' | 'bot-v2' | 'online'
 
 const BOT_PLAYER: PlayerColor = 'player2'
 const HUMAN_PLAYER: PlayerColor = 'player1'
@@ -71,19 +74,26 @@ function GameView({ onlineSession, mode, themeId, onThemeChange }: GameViewProps
           gameId: onlineSession.id,
           initialState: onlineSession.initialState,
         }
-      : mode === 'bot'
+      : mode === 'bot-v1'
         ? {
-            gameId: BOT_GAME_ID,
+            gameId: BOT_V1_GAME_ID,
             storageAdapter: localStorageAdapter,
           }
-      : undefined,
+        : mode === 'bot-v2'
+          ? {
+              gameId: BOT_V2_GAME_ID,
+              storageAdapter: localStorageAdapter,
+            }
+          : undefined,
   )
   const [isInspectingAreas, setIsInspectingAreas] = useState(false)
   const [inspectionAreas, setInspectionAreas] = useState<AreaInspectionSnapshot[]>([])
   const [inspectedArea, setInspectedArea] = useState<AreaInspectionSnapshot | null>(null)
   const activeTheme = themes[themeId]
-  const localPlayer = onlineSession?.localPlayer ?? (mode === 'bot' ? HUMAN_PLAYER : null)
-  const botPlayer = mode === 'bot' ? BOT_PLAYER : null
+  const localPlayer =
+    onlineSession?.localPlayer ??
+    (mode === 'bot-v1' || mode === 'bot-v2' ? HUMAN_PLAYER : null)
+  const botPlayer = mode === 'bot-v1' || mode === 'bot-v2' ? BOT_PLAYER : null
   const isLocalTurn = !localPlayer || currentPlayer === localPlayer
   const gameState = useMemo<GameState>(
     () => ({
@@ -192,7 +202,10 @@ function GameView({ onlineSession, mode, themeId, onThemeChange }: GameViewProps
     }
 
     const timeoutId = window.setTimeout(() => {
-      const evaluatedMove = getBestBotMove(gameState, botPlayer)
+      const evaluatedMove =
+        mode === 'bot-v2'
+          ? getBestBotV2Move(gameState, botPlayer)
+          : getBestBotMove(gameState, botPlayer)
 
       if (!evaluatedMove) {
         return
@@ -223,7 +236,7 @@ function GameView({ onlineSession, mode, themeId, onThemeChange }: GameViewProps
     }, 650)
 
     return () => window.clearTimeout(timeoutId)
-  }, [actions, areas, botPlayer, currentPlayer, gameState, lines, pendingAreaChoice, winner])
+  }, [actions, areas, botPlayer, currentPlayer, gameState, lines, mode, pendingAreaChoice, winner])
 
   return (
     <main className="app-shell">
@@ -396,7 +409,7 @@ function App() {
     }
 
     setLastLocalGameMode(mode)
-    setGameMode(mode === 'bot' ? 'bot' : 'local')
+    setGameMode(mode)
     setOnlineSession(null)
     setOnlineError(null)
     setView('game')
@@ -411,10 +424,20 @@ function App() {
     setView('game')
   }
 
-  const startNewBotGame = () => {
-    localStorageAdapter.clearGameState(BOT_GAME_ID)
-    setLastLocalGameMode('bot')
-    setGameMode('bot')
+  const startNewBotV1Game = () => {
+    localStorageAdapter.clearGameState(BOT_V1_GAME_ID)
+    localStorageAdapter.clearGameState(LEGACY_BOT_GAME_ID)
+    setLastLocalGameMode('bot-v1')
+    setGameMode('bot-v1')
+    setOnlineSession(null)
+    setOnlineError(null)
+    setView('game')
+  }
+
+  const startNewBotV2Game = () => {
+    localStorageAdapter.clearGameState(BOT_V2_GAME_ID)
+    setLastLocalGameMode('bot-v2')
+    setGameMode('bot-v2')
     setOnlineSession(null)
     setOnlineError(null)
     setView('game')
@@ -487,7 +510,8 @@ function App() {
       resumeMode={resumeMode}
       onContinueGame={continueGame}
       onNewPassAndPlay={startNewPassAndPlay}
-      onNewBotGame={startNewBotGame}
+      onNewBotV1Game={startNewBotV1Game}
+      onNewBotV2Game={startNewBotV2Game}
       onStartOnlineGame={startOnlineGame}
       onJoinOnlineGame={joinOnlineGameByCode}
       isOnlineBusy={isOnlineBusy}

@@ -4,11 +4,14 @@ import type { GameState } from './useGameState'
 import type { Json } from './types/supabase'
 
 const DEFAULT_GAME_ID = 'local-pass-and-play'
-export const BOT_GAME_ID = 'local-vs-bot'
+export const BOT_V1_GAME_ID = 'local-vs-bot-v1'
+export const BOT_V2_GAME_ID = 'local-vs-bot-v2'
+/** @deprecated Legacy key; reads merge into V1 for continue; clears with new V1 games */
+export const LEGACY_BOT_GAME_ID = 'local-vs-bot'
 const STORAGE_PREFIX = 'split-design:game-state:v1'
 const LAST_LOCAL_MODE_KEY = 'split-design:last-local-mode:v1'
 
-export type LocalSavedGameMode = 'local' | 'bot'
+export type LocalSavedGameMode = 'local' | 'bot-v1' | 'bot-v2'
 
 export interface StorageAdapter {
   saveGameState(state: GameState, gameId?: string): void | Promise<void>
@@ -160,8 +163,12 @@ export const getLastLocalGameMode = (): LocalSavedGameMode | null => {
 
   const raw = window.localStorage.getItem(LAST_LOCAL_MODE_KEY)
 
-  if (raw === 'local' || raw === 'bot') {
+  if (raw === 'local' || raw === 'bot-v1' || raw === 'bot-v2') {
     return raw
+  }
+
+  if (raw === 'bot') {
+    return 'bot-v1'
   }
 
   return null
@@ -169,26 +176,38 @@ export const getLastLocalGameMode = (): LocalSavedGameMode | null => {
 
 export const getContinueLocalGameMode = (): LocalSavedGameMode | null => {
   const localState = localStorageAdapter.loadGameState(DEFAULT_GAME_ID)
-  const botState = localStorageAdapter.loadGameState(BOT_GAME_ID)
+  const botV1State =
+    localStorageAdapter.loadGameState(BOT_V1_GAME_ID) ??
+    localStorageAdapter.loadGameState(LEGACY_BOT_GAME_ID)
+  const botV2State = localStorageAdapter.loadGameState(BOT_V2_GAME_ID)
   const localInProgress = isSavedGameInProgress(localState)
-  const botInProgress = isSavedGameInProgress(botState)
+  const botV1InProgress = isSavedGameInProgress(botV1State)
+  const botV2InProgress = isSavedGameInProgress(botV2State)
 
-  if (!localInProgress && !botInProgress) {
+  if (!localInProgress && !botV1InProgress && !botV2InProgress) {
     return null
   }
 
   const preference = getLastLocalGameMode()
 
-  if (preference === 'bot' && botInProgress) {
-    return 'bot'
+  if (preference === 'bot-v2' && botV2InProgress) {
+    return 'bot-v2'
+  }
+
+  if (preference === 'bot-v1' && botV1InProgress) {
+    return 'bot-v1'
   }
 
   if (preference === 'local' && localInProgress) {
     return 'local'
   }
 
-  if (botInProgress) {
-    return 'bot'
+  if (botV2InProgress) {
+    return 'bot-v2'
+  }
+
+  if (botV1InProgress) {
+    return 'bot-v1'
   }
 
   if (localInProgress) {

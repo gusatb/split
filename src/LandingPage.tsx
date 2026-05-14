@@ -8,18 +8,32 @@ interface LandingPageProps {
   resumeMode: LocalSavedGameMode | null
   onContinueGame: () => void
   onNewPassAndPlay: () => void
-  onNewBotGame: () => void
+  onNewBotV1Game: () => void
+  onNewBotV2Game: () => void
   onStartOnlineGame: () => void
   onJoinOnlineGame: (shortCode: string) => void
   isOnlineBusy: boolean
   onlineError: string | null
 }
 
+const continueGameHint = (mode: LocalSavedGameMode) => {
+  if (mode === 'local') {
+    return 'Resume pass and play'
+  }
+
+  if (mode === 'bot-v1') {
+    return 'Resume vs Bot V1'
+  }
+
+  return 'Resume vs Bot V2'
+}
+
 export function LandingPage({
   resumeMode,
   onContinueGame,
   onNewPassAndPlay,
-  onNewBotGame,
+  onNewBotV1Game,
+  onNewBotV2Game,
   onStartOnlineGame,
   onJoinOnlineGame,
   isOnlineBusy,
@@ -34,8 +48,8 @@ export function LandingPage({
         <p className="eyebrow">Split</p>
         <h1 id="landing-title">Draw the board apart.</h1>
         <p className="landing-copy">
-          Continue a saved pass-and-play or bot game, start fresh on this device, or play online
-          with a four-letter room code.
+          Continue a saved game, start fresh on this device, or play online with a four-letter room
+          code.
         </p>
 
         {panel === 'main' ? (
@@ -45,9 +59,7 @@ export function LandingPage({
                 <button type="button" className="game-button primary" onClick={onContinueGame}>
                   Continue game
                 </button>
-                <p className="landing-continue-hint">
-                  {resumeMode === 'bot' ? 'Resume vs bot' : 'Resume pass and play'}
-                </p>
+                <p className="landing-continue-hint">{continueGameHint(resumeMode)}</p>
               </div>
             ) : null}
 
@@ -78,8 +90,11 @@ export function LandingPage({
               <button type="button" className="game-button primary" onClick={onNewPassAndPlay}>
                 Pass and play
               </button>
-              <button type="button" className="game-button" onClick={onNewBotGame}>
-                Play bot
+              <button type="button" className="game-button" onClick={onNewBotV1Game}>
+                Play BotV1
+              </button>
+              <button type="button" className="game-button" onClick={onNewBotV2Game}>
+                Play BotV2
               </button>
             </div>
           </div>
