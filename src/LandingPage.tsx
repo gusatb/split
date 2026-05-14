@@ -1,9 +1,14 @@
 import { useState } from 'react'
 import { isSupabaseConfigured } from './lib/supabase'
+import type { LocalSavedGameMode } from './storage'
+
+type LandingPanel = 'main' | 'new-game' | 'online'
 
 interface LandingPageProps {
-  onLocalPlay: () => void
-  onPlayBot: () => void
+  resumeMode: LocalSavedGameMode | null
+  onContinueGame: () => void
+  onNewPassAndPlay: () => void
+  onNewBotGame: () => void
   onStartOnlineGame: () => void
   onJoinOnlineGame: (shortCode: string) => void
   isOnlineBusy: boolean
@@ -11,13 +16,16 @@ interface LandingPageProps {
 }
 
 export function LandingPage({
-  onLocalPlay,
-  onPlayBot,
+  resumeMode,
+  onContinueGame,
+  onNewPassAndPlay,
+  onNewBotGame,
   onStartOnlineGame,
   onJoinOnlineGame,
   isOnlineBusy,
   onlineError,
 }: LandingPageProps) {
+  const [panel, setPanel] = useState<LandingPanel>('main')
   const [joinCode, setJoinCode] = useState('')
 
   return (
@@ -26,58 +34,114 @@ export function LandingPage({
         <p className="eyebrow">Split</p>
         <h1 id="landing-title">Draw the board apart.</h1>
         <p className="landing-copy">
-          Play locally on one device or host an online match with a four-character room code.
+          Continue a saved pass-and-play or bot game, start fresh on this device, or play online
+          with a four-letter room code.
         </p>
 
-        <div className="landing-actions">
-          <button type="button" className="game-button primary" onClick={onLocalPlay}>
-            Local Play
-          </button>
-          <button type="button" className="game-button" onClick={onPlayBot}>
-            Play vs Bot
-          </button>
-          <button
-            type="button"
-            className="game-button"
-            onClick={onStartOnlineGame}
-            disabled={!isSupabaseConfigured || isOnlineBusy}
-          >
-            {isOnlineBusy ? 'Starting...' : 'Start Online Game'}
-          </button>
-        </div>
+        {panel === 'main' ? (
+          <div className="landing-menu-panel">
+            {resumeMode !== null ? (
+              <div className="landing-continue-block">
+                <button type="button" className="game-button primary" onClick={onContinueGame}>
+                  Continue game
+                </button>
+                <p className="landing-continue-hint">
+                  {resumeMode === 'bot' ? 'Resume vs bot' : 'Resume pass and play'}
+                </p>
+              </div>
+            ) : null}
 
-        <form
-          className="join-form"
-          onSubmit={(event) => {
-            event.preventDefault()
-            onJoinOnlineGame(joinCode)
-          }}
-        >
-          <label htmlFor="join-code">
-            <span className="label">Join Online Game</span>
-          </label>
-          <div className="join-controls">
-            <input
-              id="join-code"
-              value={joinCode}
-              maxLength={4}
-              inputMode="text"
-              autoCapitalize="characters"
-              autoComplete="off"
-              placeholder="CODE"
-              onChange={(event) =>
-                setJoinCode(event.target.value.replace(/[^a-z0-9]/gi, '').toUpperCase())
-              }
-            />
-            <button
-              type="submit"
-              className="game-button secondary"
-              disabled={!isSupabaseConfigured || isOnlineBusy || joinCode.length !== 4}
-            >
-              Join
-            </button>
+            <div className="landing-actions landing-actions--stack">
+              <button type="button" className="game-button" onClick={() => setPanel('new-game')}>
+                New game
+              </button>
+              <button type="button" className="game-button" onClick={() => setPanel('online')}>
+                Play online
+              </button>
+            </div>
           </div>
-        </form>
+        ) : null}
+
+        {panel === 'new-game' ? (
+          <div className="landing-menu-panel">
+            <div className="landing-back-row">
+              <button
+                type="button"
+                className="game-button secondary landing-back-button"
+                onClick={() => setPanel('main')}
+              >
+                Back
+              </button>
+            </div>
+            <h2 className="landing-menu-heading">New game</h2>
+            <div className="landing-actions landing-actions--stack">
+              <button type="button" className="game-button primary" onClick={onNewPassAndPlay}>
+                Pass and play
+              </button>
+              <button type="button" className="game-button" onClick={onNewBotGame}>
+                Play bot
+              </button>
+            </div>
+          </div>
+        ) : null}
+
+        {panel === 'online' ? (
+          <div className="landing-menu-panel">
+            <div className="landing-back-row">
+              <button
+                type="button"
+                className="game-button secondary landing-back-button"
+                onClick={() => setPanel('main')}
+              >
+                Back
+              </button>
+            </div>
+            <h2 className="landing-menu-heading">Play online</h2>
+            <div className="landing-actions landing-actions--stack">
+              <button
+                type="button"
+                className="game-button primary"
+                onClick={onStartOnlineGame}
+                disabled={!isSupabaseConfigured || isOnlineBusy}
+              >
+                {isOnlineBusy ? 'Starting…' : 'Create game'}
+              </button>
+            </div>
+
+            <form
+              className="join-form"
+              onSubmit={(event) => {
+                event.preventDefault()
+                onJoinOnlineGame(joinCode)
+              }}
+            >
+              <label htmlFor="join-code">
+                <span className="label">Join game</span>
+              </label>
+              <div className="join-controls">
+                <input
+                  id="join-code"
+                  value={joinCode}
+                  maxLength={4}
+                  inputMode="text"
+                  autoCapitalize="characters"
+                  autoComplete="off"
+                  placeholder="CODE"
+                  onChange={(event) =>
+                    setJoinCode(event.target.value.replace(/[^a-z0-9]/gi, '').toUpperCase())
+                  }
+                />
+                <button
+                  type="submit"
+                  className="game-button"
+                  disabled={!isSupabaseConfigured || isOnlineBusy || joinCode.length !== 4}
+                >
+                  Join game
+                </button>
+              </div>
+            </form>
+          </div>
+        ) : null}
 
         {!isSupabaseConfigured ? (
           <p className="online-error">
