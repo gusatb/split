@@ -10,7 +10,13 @@ import {
   type OnlineGameSession,
 } from './onlineGames'
 import { isSupabaseConfigured } from './lib/supabase'
-import { localStorageAdapter } from './storage'
+import {
+  BOT_GAME_ID,
+  defaultGameId,
+  getContinueLocalGameMode,
+  localStorageAdapter,
+  setLastLocalGameMode,
+} from './storage'
 import { themes, type ThemeId } from './themes'
 import { getAreaPolygonPoints, useGameState, type GameState } from './useGameState'
 import { WaitingScreen } from './WaitingScreen'
@@ -22,7 +28,6 @@ type GameMode = 'local' | 'bot' | 'online'
 
 const BOT_PLAYER: PlayerColor = 'player2'
 const HUMAN_PLAYER: PlayerColor = 'player1'
-const BOT_GAME_ID = 'local-vs-bot'
 
 const playerDisplayName = (player: PlayerColor) =>
   player === 'player1' ? 'Player 1' : 'Player 2'
@@ -378,14 +383,37 @@ function App() {
     }
   }, [])
 
-  const startLocalPlay = () => {
+  const resumeMode = useMemo(
+    () => (view === 'home' ? getContinueLocalGameMode() : null),
+    [view],
+  )
+
+  const continueGame = () => {
+    const mode = getContinueLocalGameMode()
+
+    if (!mode) {
+      return
+    }
+
+    setLastLocalGameMode(mode)
+    setGameMode(mode === 'bot' ? 'bot' : 'local')
+    setOnlineSession(null)
+    setOnlineError(null)
+    setView('game')
+  }
+
+  const startNewPassAndPlay = () => {
+    localStorageAdapter.clearGameState(defaultGameId)
+    setLastLocalGameMode('local')
     setGameMode('local')
     setOnlineSession(null)
     setOnlineError(null)
     setView('game')
   }
 
-  const startBotPlay = () => {
+  const startNewBotGame = () => {
+    localStorageAdapter.clearGameState(BOT_GAME_ID)
+    setLastLocalGameMode('bot')
     setGameMode('bot')
     setOnlineSession(null)
     setOnlineError(null)
@@ -445,7 +473,7 @@ function App() {
   if (view === 'game') {
     return (
       <GameView
-        key={onlineSession?.id ?? 'local'}
+        key={onlineSession?.id ?? gameMode}
         onlineSession={onlineSession}
         mode={gameMode}
         themeId={themeId}
@@ -456,8 +484,10 @@ function App() {
 
   return (
     <LandingPage
-      onLocalPlay={startLocalPlay}
-      onPlayBot={startBotPlay}
+      resumeMode={resumeMode}
+      onContinueGame={continueGame}
+      onNewPassAndPlay={startNewPassAndPlay}
+      onNewBotGame={startNewBotGame}
       onStartOnlineGame={startOnlineGame}
       onJoinOnlineGame={joinOnlineGameByCode}
       isOnlineBusy={isOnlineBusy}

@@ -4,7 +4,11 @@ import type { GameState } from './useGameState'
 import type { Json } from './types/supabase'
 
 const DEFAULT_GAME_ID = 'local-pass-and-play'
+export const BOT_GAME_ID = 'local-vs-bot'
 const STORAGE_PREFIX = 'split-design:game-state:v1'
+const LAST_LOCAL_MODE_KEY = 'split-design:last-local-mode:v1'
+
+export type LocalSavedGameMode = 'local' | 'bot'
 
 export interface StorageAdapter {
   saveGameState(state: GameState, gameId?: string): void | Promise<void>
@@ -46,6 +50,14 @@ export class LocalStorageAdapter implements StorageAdapter {
       window.localStorage.removeItem(getStorageKey(gameId))
       return null
     }
+  }
+
+  clearGameState(gameId = DEFAULT_GAME_ID) {
+    if (!isBrowserStorageAvailable()) {
+      return
+    }
+
+    window.localStorage.removeItem(getStorageKey(gameId))
   }
 }
 
@@ -113,3 +125,75 @@ export class SupabaseAdapter implements StorageAdapter {
 export const defaultGameId = DEFAULT_GAME_ID
 export const localStorageAdapter = new LocalStorageAdapter()
 export const supabaseAdapter = new SupabaseAdapter()
+
+export const isSavedGameInProgress = (state: GameState | null) => {
+  if (!state) {
+    return false
+  }
+
+  if (state.winner !== null) {
+    return false
+  }
+
+  const isFreshStart =
+    state.turnCount === 0 &&
+    state.lines.length === 4 &&
+    state.playerScores.player1 === 0 &&
+    state.playerScores.player2 === 0 &&
+    state.pendingAreaChoice === null
+
+  return !isFreshStart
+}
+
+export const setLastLocalGameMode = (mode: LocalSavedGameMode) => {
+  if (!isBrowserStorageAvailable()) {
+    return
+  }
+
+  window.localStorage.setItem(LAST_LOCAL_MODE_KEY, mode)
+}
+
+export const getLastLocalGameMode = (): LocalSavedGameMode | null => {
+  if (!isBrowserStorageAvailable()) {
+    return null
+  }
+
+  const raw = window.localStorage.getItem(LAST_LOCAL_MODE_KEY)
+
+  if (raw === 'local' || raw === 'bot') {
+    return raw
+  }
+
+  return null
+}
+
+export const getContinueLocalGameMode = (): LocalSavedGameMode | null => {
+  const localState = localStorageAdapter.loadGameState(DEFAULT_GAME_ID)
+  const botState = localStorageAdapter.loadGameState(BOT_GAME_ID)
+  const localInProgress = isSavedGameInProgress(localState)
+  const botInProgress = isSavedGameInProgress(botState)
+
+  if (!localInProgress && !botInProgress) {
+    return null
+  }
+
+  const preference = getLastLocalGameMode()
+
+  if (preference === 'bot' && botInProgress) {
+    return 'bot'
+  }
+
+  if (preference === 'local' && localInProgress) {
+    return 'local'
+  }
+
+  if (botInProgress) {
+    return 'bot'
+  }
+
+  if (localInProgress) {
+    return 'local'
+  }
+
+  return null
+}
