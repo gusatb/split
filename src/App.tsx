@@ -70,8 +70,17 @@ function GameView({ onlineSession, mode, themeId, onThemeChange }: GameViewProps
           }
       : undefined,
   )
-  const [isInspectingAreas, setIsInspectingAreas] = useState(false)
-  const [inspectionAreas, setInspectionAreas] = useState<AreaInspectionSnapshot[]>([])
+  const [showAreas, setShowAreas] = useState(false)
+  const inspectionAreas = useMemo(
+    () =>
+      areas.map((area) => ({
+        id: area.id,
+        color: area.color,
+        geometricArea: area.geometricArea,
+        polygon: getAreaPolygonPoints(area, lines),
+      })),
+    [areas, lines],
+  )
   const [inspectedArea, setInspectedArea] = useState<AreaInspectionSnapshot | null>(null)
   const activeTheme = themes[themeId]
   const localPlayer = onlineSession?.localPlayer ?? (mode === 'bot' ? HUMAN_PLAYER : null)
@@ -99,8 +108,8 @@ function GameView({ onlineSession, mode, themeId, onThemeChange }: GameViewProps
   const getPlayerLabel = (player: PlayerColor) =>
     `${player === 'player1' ? 'Player 1' : 'Player 2'}${localPlayer === player ? ' (You)' : ''}`
   const prompt = (() => {
-    if (isInspectingAreas) {
-      return 'Inspection mode: move over the board to inspect the area under the indicator.'
+    if (showAreas) {
+      return 'Show areas is on: area scores are shown on the board. You can still play normally.'
     }
 
     if (winner) {
@@ -127,27 +136,14 @@ function GameView({ onlineSession, mode, themeId, onThemeChange }: GameViewProps
       return "It's your turn: choose which color to play as. Swap colors now, or keep Player 2 by drawing the next move."
     }
 
-    return "It's your turn: draw a split between two legal snapped edge points, or tap a neutral area worth 5 or less to fill it."
+    return "It's your turn: draw a split between two legal snapped edge points, or tap a neutral area under 5 points to fill it in one tap."
   })()
-  const enterInspectionMode = () => {
-    setInspectionAreas(
-      areas.map((area) => ({
-        id: area.id,
-        color: area.color,
-        geometricArea: area.geometricArea,
-        polygon: getAreaPolygonPoints(area, lines),
-      })),
-    )
-    setInspectedArea(null)
-    setIsInspectingAreas(true)
-  }
-  const exitInspectionMode = () => {
-    setIsInspectingAreas(false)
-    setInspectionAreas([])
+  const exitShowAreas = () => {
+    setShowAreas(false)
     setInspectedArea(null)
   }
   const resetLocalGame = () => {
-    exitInspectionMode()
+    exitShowAreas()
     actions.resetGame()
   }
 
@@ -258,9 +254,9 @@ function GameView({ onlineSession, mode, themeId, onThemeChange }: GameViewProps
 
         <p className="prompt">{prompt}</p>
 
-        {isInspectingAreas ? (
+        {showAreas ? (
           <div className="inspection-readout" aria-live="polite">
-            <span className="label">Inspected area</span>
+            <span className="label">Area under cursor</span>
             <strong>{inspectedArea ? inspectedArea.geometricArea.toFixed(2) : 'None'}</strong>
           </div>
         ) : null}
@@ -271,27 +267,33 @@ function GameView({ onlineSession, mode, themeId, onThemeChange }: GameViewProps
               Swap colors
             </button>
           ) : null}
-          <button
-            type="button"
-            className="game-button"
-            onClick={isInspectingAreas ? exitInspectionMode : enterInspectionMode}
-          >
-            {isInspectingAreas ? 'Exit inspection mode' : 'Inspect areas'}
-          </button>
+          <label className="show-areas-control">
+            <input
+              type="checkbox"
+              checked={showAreas}
+              onChange={(event) => {
+                if (event.target.checked) {
+                  setShowAreas(true)
+                } else {
+                  exitShowAreas()
+                }
+              }}
+            />
+            <span>Show areas</span>
+          </label>
           <button type="button" className="game-button secondary" onClick={resetLocalGame}>
             Reset local game
           </button>
         </div>
 
         <GameCanvas
-          key={isInspectingAreas ? 'inspection-canvas' : 'game-canvas'}
           theme={activeTheme}
           board={board}
           lines={lines}
           areas={areas}
           currentPlayer={currentPlayer}
           pendingAreaChoice={pendingAreaChoice}
-          inspectionMode={isInspectingAreas}
+          showAreas={showAreas}
           inspectionAreas={inspectionAreas}
           inspectedAreaId={inspectedArea?.id ?? null}
           interactionDisabled={!isLocalTurn}

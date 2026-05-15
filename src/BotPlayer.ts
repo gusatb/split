@@ -192,7 +192,7 @@ export const getNonScore = (area: Area, playerColor: PlayerColor, lines: Line[] 
 }
 
 export const getNowScore = (area: Area, playerColor: PlayerColor, lines: Line[] = []) =>
-  area.geometricArea <= FILL_CAPTURE_LIMIT
+  area.geometricArea < FILL_CAPTURE_LIMIT
     ? botScoreFromGeometricArea(area.geometricArea)
     : getNonScore(area, playerColor, lines)
 
@@ -233,7 +233,7 @@ export const generateCandidateMoves = (
     .flatMap((area) => {
       const candidates: CandidateMove[] = []
 
-      if (area.geometricArea <= FILL_CAPTURE_LIMIT) {
+      if (area.geometricArea < FILL_CAPTURE_LIMIT) {
         candidates.push({
           kind: 'fill',
           area,

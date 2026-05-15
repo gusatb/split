@@ -15,6 +15,7 @@ import type { Area, AreaColor, Line, PlayerColor, Point, PointReference } from '
 
 const BOARD_UNITS = 10
 const CANVAS_SIZE = 600
+/** Neutral areas with geometric area **strictly below** this value may be captured in one stroke (fill). */
 export const FILL_CAPTURE_LIMIT = 5
 export const MIN_RESULTING_AREA = 1
 const WINNING_SCORE = 50
@@ -358,7 +359,7 @@ export const getSplitMoveResult = (
 }
 
 export const isSplitMoveAllowed = ({ areaToSplit, splitResult }: SplitMoveResult) =>
-  areaToSplit.geometricArea <= FILL_CAPTURE_LIMIT ||
+  areaToSplit.geometricArea < FILL_CAPTURE_LIMIT ||
   splitResult.areas.every((area) => area.geometricArea >= MIN_RESULTING_AREA)
 
 const addScore = (
@@ -537,7 +538,7 @@ export function useGameState(options: UseGameStateOptions = {}) {
 
       const { areaToSplit, splitResult } = splitMoveResult
 
-      if (areaToSplit.geometricArea <= FILL_CAPTURE_LIMIT) {
+      if (areaToSplit.geometricArea < FILL_CAPTURE_LIMIT) {
         const capturedArea = {
           ...areaToSplit,
           color: currentState.currentPlayer,
@@ -608,7 +609,7 @@ export function useGameState(options: UseGameStateOptions = {}) {
       const areaToFill = currentState.areas.find(
         (area) =>
           area.color === 'neutral' &&
-          area.geometricArea <= FILL_CAPTURE_LIMIT &&
+          area.geometricArea < FILL_CAPTURE_LIMIT &&
           isPointInsidePolygon(point, getAreaPolygonPoints(area, currentState.lines)),
       )
 

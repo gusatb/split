@@ -203,6 +203,44 @@
   outline-offset: 2px;
 }
 
+.game-canvas-stack {
+  display: grid;
+  gap: 10px;
+  justify-items: center;
+  width: 100%;
+}
+
+.chord-toolbar {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+  justify-content: center;
+  width: 100%;
+  max-width: 600px;
+}
+
+.game-canvas--show-areas {
+  cursor: crosshair;
+}
+
+.show-areas-control {
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+  padding: 8px 14px;
+  border: 1px solid var(--border);
+  border-radius: 999px;
+  background: var(--social-bg);
+  color: var(--text-h);
+  cursor: pointer;
+  user-select: none;
+}
+
+.show-areas-control input {
+  width: 18px;
+  height: 18px;
+}
+
 .game-canvas {
   width: 100%;
   max-width: 600px;
@@ -213,10 +251,6 @@
   cursor: crosshair;
   touch-action: none;
   user-select: none;
-}
-
-.game-canvas.inspecting {
-  cursor: help;
 }
 
 .victory-banner {
