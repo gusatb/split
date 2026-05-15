@@ -195,7 +195,6 @@ const applyStrokeEffects = (
 
 type SplitOverlayModel = {
   parentId: string
-  allowsChordTools: boolean
   poly0: Point[]
   poly1: Point[]
   area0: number
@@ -285,7 +284,6 @@ export function GameCanvas({
 
     return {
       parentId: split.areaToSplit.id,
-      allowsChordTools: split.areaToSplit.geometricArea >= FILL_CAPTURE_LIMIT,
       poly0: getAreaPolygonPoints(c0, linesWithPreview),
       poly1: getAreaPolygonPoints(c1, linesWithPreview),
       area0: c0.geometricArea,
@@ -298,23 +296,11 @@ export function GameCanvas({
       return null
     }
 
-    const split = getSplitMoveResult(areas, lines, createPreviewLine(selectedSnapPoint, chordEndSnap))
-
-    if (!split || split.areaToSplit.geometricArea < FILL_CAPTURE_LIMIT) {
-      return null
-    }
-
     return optimizeEvenSplitEndpoints(selectedSnapPoint, chordEndSnap, lines, areas)
   }, [areas, chordEndSnap, lines, selectedSnapPoint])
 
   const splitFiveTarget = useMemo(() => {
     if (!selectedSnapPoint || !chordEndSnap) {
-      return null
-    }
-
-    const split = getSplitMoveResult(areas, lines, createPreviewLine(selectedSnapPoint, chordEndSnap))
-
-    if (!split || split.areaToSplit.geometricArea < FILL_CAPTURE_LIMIT) {
       return null
     }
 
@@ -910,36 +896,30 @@ export function GameCanvas({
           <button type="button" className="game-button secondary" onClick={resetPointerTurn}>
             Cancel
           </button>
-          {splitOverlay?.allowsChordTools ? (
-            <>
-              <button
-                type="button"
-                className="game-button secondary"
-                disabled={!evenSplitTarget}
-                onClick={() => {
-                  if (evenSplitTarget) {
-                    setHoveredSnapPoint(evenSplitTarget)
-                    setCommittedEndSnap(evenSplitTarget)
-                  }
-                }}
-              >
-                Even split
-              </button>
-              <button
-                type="button"
-                className="game-button secondary"
-                disabled={!splitFiveTarget}
-                onClick={() => {
-                  if (splitFiveTarget) {
-                    setHoveredSnapPoint(splitFiveTarget)
-                    setCommittedEndSnap(splitFiveTarget)
-                  }
-                }}
-              >
-                Split 5
-              </button>
-            </>
-          ) : null}
+          <button
+            type="button"
+            className="game-button secondary"
+            onClick={() => {
+              if (evenSplitTarget) {
+                setHoveredSnapPoint(evenSplitTarget)
+                setCommittedEndSnap(evenSplitTarget)
+              }
+            }}
+          >
+            Even split
+          </button>
+          <button
+            type="button"
+            className="game-button secondary"
+            onClick={() => {
+              if (splitFiveTarget) {
+                setHoveredSnapPoint(splitFiveTarget)
+                setCommittedEndSnap(splitFiveTarget)
+              }
+            }}
+          >
+            Split 5
+          </button>
           <button type="button" className="game-button primary" onClick={confirmChord}>
             Confirm
           </button>

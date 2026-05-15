@@ -53,15 +53,29 @@ const iterChordSegments = (start: SnappedPoint, lines: Line[], areas: Area[]) =>
     (segment) => isLegalLineSegment(segment) && segment.lineId !== start.lineId,
   )
 
+const pickClosestAmongBest = <T extends { dist: number }>(tier: T[]): T => {
+  let best = tier[0]
+
+  for (const candidate of tier.slice(1)) {
+    if (candidate.dist < best.dist - GEOMETRY_EPSILON) {
+      best = candidate
+    }
+  }
+
+  return best
+}
+
+/**
+ * Best-effort even split: minimize |A − B|; when several placements tie on that score, pick the
+ * end closest to `currentEnd` (the user's second endpoint).
+ */
 export const optimizeEvenSplitEndpoints = (
   start: SnappedPoint,
   currentEnd: SnappedPoint,
   lines: Line[],
   areas: Area[],
-): SnappedPoint | null => {
-  let bestEnd: SnappedPoint | null = null
-  let bestScore = Number.POSITIVE_INFINITY
-  let bestDist = Number.POSITIVE_INFINITY
+): SnappedPoint => {
+  const candidates: { end: SnappedPoint; imbalance: number; dist: number }[] = []
 
   for (const segment of iterChordSegments(start, lines, areas)) {
     for (let step = 0; step <= SCAN_STEPS; step += 1) {
@@ -74,38 +88,36 @@ export const optimizeEvenSplitEndpoints = (
       }
 
       const [a0, a1] = evaluated.split.splitResult.areas
-      const score = Math.abs(a0.geometricArea - a1.geometricArea)
+      const imbalance = Math.abs(a0.geometricArea - a1.geometricArea)
       const dist = getDistance(currentEnd.point, evaluated.end.point)
-
-      if (
-        score < bestScore - 1e-9 ||
-        (Math.abs(score - bestScore) <= 1e-9 && dist < bestDist - GEOMETRY_EPSILON)
-      ) {
-        bestScore = score
-        bestDist = dist
-        bestEnd = evaluated.end
-      }
+      candidates.push({ end: evaluated.end, imbalance, dist })
     }
   }
 
-  return bestEnd
+  if (candidates.length === 0) {
+    return currentEnd
+  }
+
+  const minImbalance = Math.min(...candidates.map((c) => c.imbalance))
+  const imbalanceEps = 1e-6
+  const tier = candidates.filter((c) => c.imbalance <= minImbalance + imbalanceEps)
+
+  return pickClosestAmongBest(tier).end
 }
 
 const SPLIT_TARGET = 5
-const SPLIT_FIVE_TOLERANCE = 0.04
 
-const matchesSplitFive = (a: number, b: number) =>
-  Math.abs(a - SPLIT_TARGET) <= SPLIT_FIVE_TOLERANCE ||
-  Math.abs(b - SPLIT_TARGET) <= SPLIT_FIVE_TOLERANCE
-
+/**
+ * Best-effort “split 5”: minimize how far the smaller fragment is from 5.0; ties go to the end
+ * closest to `currentEnd`.
+ */
 export const optimizeSplitFiveEndpoints = (
   start: SnappedPoint,
   currentEnd: SnappedPoint,
   lines: Line[],
   areas: Area[],
-): SnappedPoint | null => {
-  let bestEnd: SnappedPoint | null = null
-  let bestDist = Number.POSITIVE_INFINITY
+): SnappedPoint => {
+  const candidates: { end: SnappedPoint; score: number; dist: number }[] = []
 
   for (const segment of iterChordSegments(start, lines, areas)) {
     for (let step = 0; step <= SCAN_STEPS; step += 1) {
@@ -118,19 +130,22 @@ export const optimizeSplitFiveEndpoints = (
       }
 
       const [a0, a1] = evaluated.split.splitResult.areas
-
-      if (!matchesSplitFive(a0.geometricArea, a1.geometricArea)) {
-        continue
-      }
-
+      const score = Math.min(
+        Math.abs(a0.geometricArea - SPLIT_TARGET),
+        Math.abs(a1.geometricArea - SPLIT_TARGET),
+      )
       const dist = getDistance(currentEnd.point, evaluated.end.point)
-
-      if (dist < bestDist - GEOMETRY_EPSILON) {
-        bestDist = dist
-        bestEnd = evaluated.end
-      }
+      candidates.push({ end: evaluated.end, score, dist })
     }
   }
 
-  return bestEnd
+  if (candidates.length === 0) {
+    return currentEnd
+  }
+
+  const minScore = Math.min(...candidates.map((c) => c.score))
+  const scoreEps = 1e-4
+  const tier = candidates.filter((c) => c.score <= minScore + scoreEps)
+
+  return pickClosestAmongBest(tier).end
 }
