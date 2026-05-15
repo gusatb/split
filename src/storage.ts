@@ -4,7 +4,14 @@ import type { GameState } from './useGameState'
 import type { Json } from './types/supabase'
 
 const DEFAULT_GAME_ID = 'local-pass-and-play'
+export const BOT_V1_GAME_ID = 'local-vs-bot-v1'
+export const BOT_V2_GAME_ID = 'local-vs-bot-v2'
+/** @deprecated Legacy key; reads merge into V1 for continue; clears with new V1 games */
+export const LEGACY_BOT_GAME_ID = 'local-vs-bot'
 const STORAGE_PREFIX = 'split-design:game-state:v1'
+const LAST_LOCAL_MODE_KEY = 'split-design:last-local-mode:v1'
+
+export type LocalSavedGameMode = 'local' | 'bot-v1' | 'bot-v2'
 
 export interface StorageAdapter {
   saveGameState(state: GameState, gameId?: string): void | Promise<void>
@@ -46,6 +53,14 @@ export class LocalStorageAdapter implements StorageAdapter {
       window.localStorage.removeItem(getStorageKey(gameId))
       return null
     }
+  }
+
+  clearGameState(gameId = DEFAULT_GAME_ID) {
+    if (!isBrowserStorageAvailable()) {
+      return
+    }
+
+    window.localStorage.removeItem(getStorageKey(gameId))
   }
 }
 
@@ -113,3 +128,92 @@ export class SupabaseAdapter implements StorageAdapter {
 export const defaultGameId = DEFAULT_GAME_ID
 export const localStorageAdapter = new LocalStorageAdapter()
 export const supabaseAdapter = new SupabaseAdapter()
+
+export const isSavedGameInProgress = (state: GameState | null) => {
+  if (!state) {
+    return false
+  }
+
+  if (state.winner !== null) {
+    return false
+  }
+
+  const isFreshStart =
+    state.turnCount === 0 &&
+    state.lines.length === 4 &&
+    state.playerScores.player1 === 0 &&
+    state.playerScores.player2 === 0 &&
+    state.pendingAreaChoice === null
+
+  return !isFreshStart
+}
+
+export const setLastLocalGameMode = (mode: LocalSavedGameMode) => {
+  if (!isBrowserStorageAvailable()) {
+    return
+  }
+
+  window.localStorage.setItem(LAST_LOCAL_MODE_KEY, mode)
+}
+
+export const getLastLocalGameMode = (): LocalSavedGameMode | null => {
+  if (!isBrowserStorageAvailable()) {
+    return null
+  }
+
+  const raw = window.localStorage.getItem(LAST_LOCAL_MODE_KEY)
+
+  if (raw === 'local' || raw === 'bot-v1' || raw === 'bot-v2') {
+    return raw
+  }
+
+  if (raw === 'bot') {
+    return 'bot-v1'
+  }
+
+  return null
+}
+
+/** True if any local slot has a non-finished game (default or legacy bot keys). */
+export const hasInProgressLocalSave = () => {
+  const localState = localStorageAdapter.loadGameState(DEFAULT_GAME_ID)
+  const botV1State =
+    localStorageAdapter.loadGameState(BOT_V1_GAME_ID) ??
+    localStorageAdapter.loadGameState(LEGACY_BOT_GAME_ID)
+  const botV2State = localStorageAdapter.loadGameState(BOT_V2_GAME_ID)
+
+  return (
+    isSavedGameInProgress(localState) ||
+    isSavedGameInProgress(botV1State) ||
+    isSavedGameInProgress(botV2State)
+  )
+}
+
+/**
+ * If the default slot is empty but a legacy bot slot has an in-progress game, copy it into the
+ * default slot so one `useGameState` path can load it.
+ */
+export const migrateInProgressSaveToDefaultSlot = () => {
+  if (!isBrowserStorageAvailable()) {
+    return
+  }
+
+  const defaultState = localStorageAdapter.loadGameState(DEFAULT_GAME_ID)
+
+  if (isSavedGameInProgress(defaultState)) {
+    return
+  }
+
+  const candidates = [
+    localStorageAdapter.loadGameState(BOT_V2_GAME_ID),
+    localStorageAdapter.loadGameState(BOT_V1_GAME_ID),
+    localStorageAdapter.loadGameState(LEGACY_BOT_GAME_ID),
+  ]
+
+  for (const candidate of candidates) {
+    if (candidate && isSavedGameInProgress(candidate)) {
+      localStorageAdapter.saveGameState(candidate, DEFAULT_GAME_ID)
+      return
+    }
+  }
+}
