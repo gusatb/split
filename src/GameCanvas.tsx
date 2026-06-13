@@ -753,17 +753,17 @@ export function GameCanvas({
     )
     setHoveredSnapPoint(closestSnapPoint)
 
-    if (!closestSnapPoint) {
-      if (!selectedSnapPoint) {
-        const fillableArea = findFillableAreaAt(boardPoint)
+    if (!selectedSnapPoint) {
+      const fillableArea = findFillableAreaAt(boardPoint)
 
-        if (fillableArea) {
-          setPendingFill({ areaId: fillableArea.id, point: boardPoint })
-          setHoveredSnapPoint(null)
-          return
-        }
+      if (fillableArea) {
+        setPendingFill({ areaId: fillableArea.id, point: boardPoint })
+        setHoveredSnapPoint(null)
+        return
       }
+    }
 
+    if (!closestSnapPoint) {
       setSelectedSnapPoint(null)
       return
     }

@@ -17,11 +17,16 @@ const BOARD_UNITS = 10
 const CANVAS_SIZE = 600
 /** Neutral areas with geometric area **strictly below** this value may be captured via click-to-fill. */
 export const FILL_CAPTURE_LIMIT = 5
-/** Tolerance so areas that display as 5.0 (e.g. 4.9999999) are not fillable. */
+/** Tiny nudge used when steering Split 5 fragments toward >= 5.0. */
 export const FILL_CAPTURE_EPSILON = 1e-4
 
+/**
+ * An area is fillable when its area is strictly less than 5.0. The geometric
+ * area is rounded first so float noise on a true 5.0 area (e.g. 4.9999999998)
+ * is treated as exactly 5.0 and therefore NOT fillable.
+ */
 export const isFillCaptureSizeArea = (geometricArea: number) =>
-  geometricArea < FILL_CAPTURE_LIMIT - FILL_CAPTURE_EPSILON
+  Math.round(geometricArea * 1e6) / 1e6 < FILL_CAPTURE_LIMIT
 export const MIN_RESULTING_AREA = 1
 const WINNING_SCORE = 50
 
@@ -364,7 +369,7 @@ export const getSplitMoveResult = (
 }
 
 export const isSplitMoveAllowed = ({ areaToSplit, splitResult }: SplitMoveResult) =>
-  isFillCaptureSizeArea(areaToSplit.geometricArea) ||
+  !isFillCaptureSizeArea(areaToSplit.geometricArea) &&
   splitResult.areas.every((area) => area.geometricArea >= MIN_RESULTING_AREA)
 
 const addScore = (
