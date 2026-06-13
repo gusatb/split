@@ -11,7 +11,7 @@ import {
 } from './lineSegments'
 import type { Area, LegalLineSegment, Line, Point } from './types'
 import type { SnappedPoint } from './useGameState'
-import { getSplitMoveResult, isSplitMoveAllowed } from './useGameState'
+import { FILL_CAPTURE_EPSILON, getSplitMoveResult, isSplitMoveAllowed } from './useGameState'
 
 const SPLIT_TARGET = 5
 const MAX_FALLBACK_DISTANCE = 0.35
@@ -192,14 +192,27 @@ const makeEvalAt =
 
 const imbalanceOf = (e: ChordMetricSample) => Math.abs(e.a0 - e.a1)
 
-const splitFiveScoreOf = (e: ChordMetricSample) =>
-  Math.min(Math.abs(e.a0 - SPLIT_TARGET), Math.abs(e.a1 - SPLIT_TARGET))
+/** Prefer fragments at or above 5.0 so float noise does not leave a fillable 4.999… piece. */
+const splitFiveScoreOf = (e: ChordMetricSample) => {
+  const scoreFor = (area: number) => {
+    const delta = area - SPLIT_TARGET
+
+    if (delta >= 0) {
+      return delta
+    }
+
+    return Math.abs(delta) + FILL_CAPTURE_EPSILON
+  }
+
+  return Math.min(scoreFor(e.a0), scoreFor(e.a1))
+}
 
 const bisectRoot = (
   evaluateAt: (t: number) => ChordMetricSample | null,
   tLo: number,
   tHi: number,
   value: (e: ChordMetricSample) => number,
+  preferNonNegativeSide = false,
 ): number | null => {
   let lo = tLo
   let hi = tHi
@@ -236,6 +249,12 @@ const bisectRoot = (
     const vMid = value(eMid)
 
     if (Math.abs(vMid) < AREA_ROOT_TOL) {
+      if (preferNonNegativeSide && vMid < 0) {
+        lo = mid
+        vLo = vMid
+        continue
+      }
+
       return mid
     }
 
@@ -244,6 +263,14 @@ const bisectRoot = (
     } else {
       lo = mid
       vLo = vMid
+    }
+  }
+
+  if (preferNonNegativeSide) {
+    const eFinalHi = evaluateAt(hi)
+
+    if (eFinalHi && value(eFinalHi) >= 0) {
+      return hi
     }
   }
 
@@ -478,7 +505,7 @@ export const optimizeSplitFiveEndpoints = (
         continue
       }
 
-      const rootT = bisectRoot(evalAt, tA, tB, value)
+      const rootT = bisectRoot(evalAt, tA, tB, value, true)
 
       if (rootT === null) {
         continue

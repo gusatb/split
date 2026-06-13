@@ -8,7 +8,7 @@ import {
   type CandidateMove,
   type EvaluatedCandidateMove,
 } from './BotPlayer'
-import { FILL_CAPTURE_LIMIT, type GameState, type SplitResult } from './useGameState'
+import { isFillCaptureSizeArea, type GameState, type SplitResult } from './useGameState'
 import type { Area, Line, PlayerColor } from './types'
 
 export const N_DEPTH = 5
@@ -240,7 +240,7 @@ export const getPrunedCandidateMoves = (
   const allGenerated = generateCandidateMoves(state, activeColor)
 
   for (const { area } of rankedAreas) {
-    if (area.geometricArea <= FILL_CAPTURE_LIMIT) {
+    if (isFillCaptureSizeArea(area.geometricArea)) {
       moves.push({ kind: 'fill', area })
       continue
     }

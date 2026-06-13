@@ -5,9 +5,9 @@ import {
   isPointOnLineSegment,
 } from './geometry'
 import {
-  FILL_CAPTURE_LIMIT,
   getAreaPolygonPoints,
   getSplitMoveResult,
+  isFillCaptureSizeArea,
   isSplitMoveAllowed,
   type GameState,
   type SplitResult,
@@ -20,8 +20,6 @@ const MIN_LINE_LENGTH = 0.1
 const NON_SCORE_COEFFICIENT = 0.5
 
 const botScoreFromGeometricArea = (geometricArea: number) => Math.sqrt(geometricArea)
-
-const isFillCaptureSizeArea = (area: Area) => area.geometricArea <= FILL_CAPTURE_LIMIT
 
 const pickSmallerAndLargerArea = (
   areaA: Area,
@@ -205,7 +203,7 @@ export const getNonScore = (area: Area, playerColor: PlayerColor, lines: Line[] 
 }
 
 export const getNowScore = (area: Area, playerColor: PlayerColor, lines: Line[] = []) =>
-  area.geometricArea < FILL_CAPTURE_LIMIT
+  isFillCaptureSizeArea(area.geometricArea)
     ? botScoreFromGeometricArea(area.geometricArea)
     : getNonScore(area, playerColor, lines)
 
@@ -246,7 +244,7 @@ export const generateCandidateMoves = (
     .flatMap((area) => {
       const candidates: CandidateMove[] = []
 
-      if (area.geometricArea < FILL_CAPTURE_LIMIT) {
+      if (isFillCaptureSizeArea(area.geometricArea)) {
         candidates.push({
           kind: 'fill',
           area,
@@ -348,7 +346,7 @@ export const evaluateCandidateMove = (
       rawBotPoints: defenseChoice.chosenForOpponent.geometricArea,
     })
 
-    if (isFillCaptureSizeArea(areaA)) {
+    if (isFillCaptureSizeArea(areaA.geometricArea)) {
       scenarios.push({
         score:
           botScoreFromGeometricArea(areaB.geometricArea) -
@@ -357,7 +355,7 @@ export const evaluateCandidateMove = (
       })
     }
 
-    if (isFillCaptureSizeArea(areaB)) {
+    if (isFillCaptureSizeArea(areaB.geometricArea)) {
       scenarios.push({
         score:
           botScoreFromGeometricArea(areaA.geometricArea) -
@@ -366,7 +364,7 @@ export const evaluateCandidateMove = (
       })
     }
 
-    if (isFillCaptureSizeArea(areaA) && isFillCaptureSizeArea(areaB)) {
+    if (isFillCaptureSizeArea(areaA.geometricArea) && isFillCaptureSizeArea(areaB.geometricArea)) {
       const { smaller, larger } = pickSmallerAndLargerArea(areaA, areaB)
       scenarios.push({
         score:
@@ -381,8 +379,8 @@ export const evaluateCandidateMove = (
       ...scenarios.filter((s) => s.score === score).map((s) => s.rawBotPoints),
     )
   } else {
-    const aSmall = isFillCaptureSizeArea(areaA)
-    const bSmall = isFillCaptureSizeArea(areaB)
+    const aSmall = isFillCaptureSizeArea(areaA.geometricArea)
+    const bSmall = isFillCaptureSizeArea(areaB.geometricArea)
 
     if (aSmall && bSmall) {
       const { smaller, larger } = pickSmallerAndLargerArea(areaA, areaB)

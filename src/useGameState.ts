@@ -15,8 +15,13 @@ import type { Area, AreaColor, Line, PlayerColor, Point, PointReference } from '
 
 const BOARD_UNITS = 10
 const CANVAS_SIZE = 600
-/** Neutral areas with geometric area **strictly below** this value may be captured in one stroke (fill). */
+/** Neutral areas with geometric area **strictly below** this value may be captured via click-to-fill. */
 export const FILL_CAPTURE_LIMIT = 5
+/** Tolerance so areas that display as 5.0 (e.g. 4.9999999) are not fillable. */
+export const FILL_CAPTURE_EPSILON = 1e-4
+
+export const isFillCaptureSizeArea = (geometricArea: number) =>
+  geometricArea < FILL_CAPTURE_LIMIT - FILL_CAPTURE_EPSILON
 export const MIN_RESULTING_AREA = 1
 const WINNING_SCORE = 50
 
@@ -359,7 +364,7 @@ export const getSplitMoveResult = (
 }
 
 export const isSplitMoveAllowed = ({ areaToSplit, splitResult }: SplitMoveResult) =>
-  areaToSplit.geometricArea < FILL_CAPTURE_LIMIT ||
+  isFillCaptureSizeArea(areaToSplit.geometricArea) ||
   splitResult.areas.every((area) => area.geometricArea >= MIN_RESULTING_AREA)
 
 const addScore = (
@@ -537,31 +542,6 @@ export function useGameState(options: UseGameStateOptions = {}) {
       }
 
       const { areaToSplit, splitResult } = splitMoveResult
-
-      if (areaToSplit.geometricArea < FILL_CAPTURE_LIMIT) {
-        const capturedArea = {
-          ...areaToSplit,
-          color: currentState.currentPlayer,
-        }
-        const { playerScores, winner } = addScore(
-          currentState.playerScores,
-          currentState.currentPlayer,
-          areaToSplit.geometricArea,
-        )
-
-        return {
-          ...currentState,
-          lines: markAreaBoundaryFilled(currentState.lines, [capturedArea]),
-          areas: currentState.areas.map((area) =>
-            area.id === capturedArea.id ? capturedArea : area,
-          ),
-          playerScores,
-          winner,
-          currentPlayer: getNextPlayer(currentState.currentPlayer),
-          turnCount: currentState.turnCount + 1,
-        }
-      }
-
       const nextLines = [...currentState.lines, newLine]
       const nextAreas = currentState.areas.flatMap((area) =>
         area.id === areaToSplit.id ? splitResult.areas : [area],
@@ -609,7 +589,7 @@ export function useGameState(options: UseGameStateOptions = {}) {
       const areaToFill = currentState.areas.find(
         (area) =>
           area.color === 'neutral' &&
-          area.geometricArea < FILL_CAPTURE_LIMIT &&
+          isFillCaptureSizeArea(area.geometricArea) &&
           isPointInsidePolygon(point, getAreaPolygonPoints(area, currentState.lines)),
       )
 

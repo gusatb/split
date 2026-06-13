@@ -14,9 +14,9 @@ import {
 } from './lineSegments'
 import { getAreaFill, getLineStroke, type ThemeConfig } from './themes'
 import {
-  FILL_CAPTURE_LIMIT,
   getAreaPolygonPoints,
   getSplitMoveResult,
+  isFillCaptureSizeArea,
   isSplitMoveAllowed,
   isPointInsidePolygon,
   type BoardConfig,
@@ -60,8 +60,6 @@ type ChordPreviewModel = {
   line: Line
   isValid: boolean
   splitFragments: [Area, Area] | null
-  isFillCapturePreview: boolean
-  fillCaptureParentArea: Area | null
 }
 
 const buildChordPreview = (
@@ -73,23 +71,16 @@ const buildChordPreview = (
   const line = createPreviewLine(start, end)
   const isValid = isPreviewValid(start, end, lines, areas)
   let splitFragments: [Area, Area] | null = null
-  let isFillCapturePreview = false
-  let fillCaptureParentArea: Area | null = null
 
   if (isValid) {
     const splitMoveResult = getSplitMoveResult(areas, lines, line)
 
     if (splitMoveResult && isSplitMoveAllowed(splitMoveResult)) {
-      if (splitMoveResult.areaToSplit.geometricArea < FILL_CAPTURE_LIMIT) {
-        isFillCapturePreview = true
-        fillCaptureParentArea = splitMoveResult.areaToSplit
-      } else {
-        splitFragments = splitMoveResult.splitResult.areas
-      }
+      splitFragments = splitMoveResult.splitResult.areas
     }
   }
 
-  return { line, isValid, splitFragments, isFillCapturePreview, fillCaptureParentArea }
+  return { line, isValid, splitFragments }
 }
 
 const toCanvasPoint = (point: Point, board: RenderBoard): Point => ({
@@ -174,6 +165,10 @@ export function GameCanvas({
     start: SnappedPoint
     end: SnappedPoint
   } | null>(null)
+  const [pendingFill, setPendingFill] = useState<{
+    areaId: string
+    point: Point
+  } | null>(null)
   const [inspectionPoint, setInspectionPoint] = useState<Point | null>(null)
   const legalLineSegments = useMemo(() => buildLegalLineSegments(lines, areas), [areas, lines])
   const renderBoard: RenderBoard = useMemo(
@@ -198,7 +193,7 @@ export function GameCanvas({
   }, [areas, hoveredSnapPoint, lines, pendingChord, selectedSnapPoint])
 
   const splitOverlay = useMemo((): SplitOverlayModel | null => {
-    if (!preview?.isValid || preview.isFillCapturePreview || !preview.splitFragments) {
+    if (!preview?.isValid || !preview.splitFragments) {
       return null
     }
 
@@ -242,6 +237,7 @@ export function GameCanvas({
 
     const frameId = requestAnimationFrame(() => {
       setPendingChord(null)
+      setPendingFill(null)
       setHoveredSnapPoint(null)
       setSelectedSnapPoint(null)
     })
@@ -281,7 +277,9 @@ export function GameCanvas({
       }
 
       const isPendingChoice = pendingAreaChoice?.areaIds.includes(area.id) ?? false
-      const isFreeTakeArea = area.color === 'neutral' && area.geometricArea < FILL_CAPTURE_LIMIT
+      const isPendingFill = pendingFill?.areaId === area.id
+      const isFreeTakeArea =
+        area.color === 'neutral' && isFillCaptureSizeArea(area.geometricArea)
       const hideParentOverlay =
         parentIdForPreview !== undefined && area.id === parentIdForPreview && showAreaLabels
 
@@ -289,7 +287,7 @@ export function GameCanvas({
       context.moveTo(polygonPoints[0].x, polygonPoints[0].y)
       polygonPoints.slice(1).forEach((point) => context.lineTo(point.x, point.y))
       context.closePath()
-      context.fillStyle = isPendingChoice
+      context.fillStyle = isPendingChoice || isPendingFill
         ? theme.pendingFill
         : getAreaFill(theme, area.color)
       context.fill()
@@ -370,9 +368,7 @@ export function GameCanvas({
       }
     }
 
-    const hidePreviewLineForFillCapture = preview?.isValid && preview.isFillCapturePreview
-
-    if (preview && !hidePreviewLineForFillCapture) {
+    if (preview) {
       const stroke = preview.isValid ? getLineStroke(theme, currentPlayer) : 'rgba(239, 68, 68, 0.72)'
       const previewStart = toCanvasPoint(
         { x: preview.line.x1, y: preview.line.y1 },
@@ -395,30 +391,7 @@ export function GameCanvas({
       resetCanvasEffects(context)
     }
 
-    if (preview?.isFillCapturePreview && preview.isValid && preview.fillCaptureParentArea) {
-      const parentPoly = getAreaPolygonPoints(preview.fillCaptureParentArea, lines)
-
-      if (parentPoly.length >= 3) {
-        const labelPoint = toCanvasPoint(getPolygonCentroid(parentPoly), renderBoard)
-        const scoreLabel = preview.fillCaptureParentArea.geometricArea.toFixed(1)
-
-        resetCanvasEffects(context)
-        context.textAlign = 'center'
-        context.textBaseline = 'middle'
-        context.font = '700 22px system-ui, sans-serif'
-        context.lineWidth = 4
-        context.lineJoin = 'round'
-        context.miterLimit = 2
-        context.strokeStyle = theme.background
-        context.fillStyle = theme.text
-        context.strokeText(scoreLabel, labelPoint.x, labelPoint.y)
-        context.fillText(scoreLabel, labelPoint.x, labelPoint.y)
-        resetCanvasEffects(context)
-      }
-
-      context.lineJoin = 'miter'
-      context.miterLimit = 10
-    } else if (preview?.splitFragments) {
+    if (preview?.splitFragments) {
       const linesWithPreview = [...lines, preview.line]
 
       for (const fragment of preview.splitFragments) {
@@ -516,6 +489,7 @@ export function GameCanvas({
     showAreas,
     inspectionPoint,
     pendingAreaChoice?.areaIds,
+    pendingFill?.areaId,
     preview,
     splitOverlay,
     renderBoard,
@@ -564,7 +538,16 @@ export function GameCanvas({
   const resetPointerTurn = () => {
     clearChordPickInProgress()
     setPendingChord(null)
+    setPendingFill(null)
   }
+
+  const findFillableAreaAt = (point: Point) =>
+    areas.find(
+      (area) =>
+        area.color === 'neutral' &&
+        isFillCaptureSizeArea(area.geometricArea) &&
+        isPointInsidePolygon(point, getAreaPolygonPoints(area, lines)),
+    ) ?? null
 
   const updateInspectionIndicator = (point: Point | null) => {
     setInspectionPoint(point)
@@ -645,6 +628,11 @@ export function GameCanvas({
       return
     }
 
+    if (pendingFill) {
+      setHoveredSnapPoint(null)
+      return
+    }
+
     if (pendingChord) {
       return
     }
@@ -683,6 +671,10 @@ export function GameCanvas({
       return
     }
 
+    if (pendingFill) {
+      return
+    }
+
     const closestSnapPoint = findClosestSnapPoint(
       boardPoint,
       selectedSnapPoint?.lineId,
@@ -710,6 +702,10 @@ export function GameCanvas({
       }
 
       if (pendingChord) {
+        return
+      }
+
+      if (pendingFill) {
         return
       }
 
@@ -746,6 +742,10 @@ export function GameCanvas({
       return
     }
 
+    if (pendingFill) {
+      return
+    }
+
     const closestSnapPoint = findClosestSnapPoint(
       boardPoint,
       selectedSnapPoint?.lineId,
@@ -754,9 +754,14 @@ export function GameCanvas({
     setHoveredSnapPoint(closestSnapPoint)
 
     if (!closestSnapPoint) {
-      if (!selectedSnapPoint && onFillArea(boardPoint)) {
-        setHoveredSnapPoint(null)
-        return
+      if (!selectedSnapPoint) {
+        const fillableArea = findFillableAreaAt(boardPoint)
+
+        if (fillableArea) {
+          setPendingFill({ areaId: fillableArea.id, point: boardPoint })
+          setHoveredSnapPoint(null)
+          return
+        }
       }
 
       setSelectedSnapPoint(null)
@@ -792,6 +797,10 @@ export function GameCanvas({
       return
     }
 
+    if (pendingFill) {
+      return
+    }
+
     resetPointerTurn()
   }
 
@@ -822,6 +831,19 @@ export function GameCanvas({
 
   const handleCancelPendingLine = () => {
     setPendingChord(null)
+  }
+
+  const handleConfirmPendingFill = () => {
+    if (!pendingFill) {
+      return
+    }
+
+    onFillArea(pendingFill.point)
+    setPendingFill(null)
+  }
+
+  const handleCancelPendingFill = () => {
+    setPendingFill(null)
   }
 
   const handleEvenSplitPendingLine = () => {
@@ -855,7 +877,10 @@ export function GameCanvas({
   }
 
   const showLineConfirmBar =
-    pendingChord !== null && !interactionDisabled && !pendingAreaChoice
+    pendingChord !== null && !interactionDisabled && !pendingAreaChoice && !pendingFill
+
+  const showFillConfirmBar =
+    pendingFill !== null && !interactionDisabled && !pendingAreaChoice
 
   return (
     <div className="game-canvas-wrap">
@@ -878,7 +903,7 @@ export function GameCanvas({
           <button type="button" className="game-button" onClick={handleConfirmPendingLine}>
             Confirm
           </button>
-          {preview != null && preview.isValid && !preview.isFillCapturePreview ? (
+          {preview != null && preview.isValid ? (
             <>
               <button type="button" className="game-button" onClick={handleEvenSplitPendingLine}>
                 Even split
@@ -889,6 +914,16 @@ export function GameCanvas({
             </>
           ) : null}
           <button type="button" className="game-button secondary" onClick={handleCancelPendingLine}>
+            Cancel
+          </button>
+        </div>
+      ) : null}
+      {showFillConfirmBar ? (
+        <div className="line-confirm-bar" role="group" aria-label="Confirm area fill">
+          <button type="button" className="game-button" onClick={handleConfirmPendingFill}>
+            Confirm
+          </button>
+          <button type="button" className="game-button secondary" onClick={handleCancelPendingFill}>
             Cancel
           </button>
         </div>
